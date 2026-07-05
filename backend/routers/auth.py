@@ -13,6 +13,7 @@ from auth_utils import (
     check_brute_force, record_failed_attempt, clear_attempts, log_audit,
     generate_totp_secret, totp_uri, verify_totp, get_jwt_secret, JWT_ALGORITHM,
 )
+from email_service import send_password_reset_email
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -140,7 +141,7 @@ async def forgot_password(payload: ForgotPasswordRequest):
             "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
             "used": False,
         })
-        print(f"[PASSWORD RESET LINK] /reset-password?token={token} (for {payload.email})")
+        await send_password_reset_email(payload.email, token)
     return {"message": "If an account exists, a reset link has been sent."}
 
 

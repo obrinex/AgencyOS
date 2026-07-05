@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from database import db, serialize_doc, serialize_list, to_object_id, next_counter
 from auth_utils import get_current_user, require_staff, log_audit
+from email_service import send_invoice_email
 
 from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
 
@@ -140,7 +141,18 @@ async def send_invoice(invoice_id: str, user: dict = Depends(require_staff)):
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
     await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat()}})
-    print(f"[INVOICE EMAIL] Invoice {invoice['invoice_number']} sent for client {invoice['client_id']}")
+
+    recipient_email = None
+    portal_user = await db.users.find_one({"role": "client", "client_id": invoice["client_id"]})
+    if portal_user:
+        recipient_email = portal_user["email"]
+    else:
+        contact = await db.contacts.find_one({"client_id": invoice["client_id"], "email": {"$ne": None}})
+        if contact:
+            recipient_email = contact.get("email")
+    if recipient_email:
+        await send_invoice_email(recipient_email, invoice["invoice_number"], invoice["total"], invoice["due_date"], invoice_id)
+
     updated = await db.invoices.find_one({"_id": invoice["_id"]})
     return serialize_doc(updated)
 

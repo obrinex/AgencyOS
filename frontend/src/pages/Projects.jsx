@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, FolderKanban, LayoutGrid, List as ListIcon } from "lucide-react";
+import { Plus, FolderKanban, LayoutGrid, List as ListIcon, GanttChartSquare } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import StatusBadge from "@/components/StatusBadge";
+import ProjectsTimeline from "@/components/ProjectsTimeline";
 import { PROJECT_STATUS_CONFIG, PROJECT_STATUS_LIST } from "@/lib/statusConfig";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +71,7 @@ export default function Projects() {
             <div className="flex rounded-lg border border-white/10 bg-surface-1 p-0.5">
               <button data-testid="view-toggle-kanban" onClick={() => setView("kanban")} className={`p-1.5 rounded-md ${view === "kanban" ? "bg-surface-2" : ""}`}><LayoutGrid className="h-3.5 w-3.5" /></button>
               <button data-testid="view-toggle-list" onClick={() => setView("list")} className={`p-1.5 rounded-md ${view === "list" ? "bg-surface-2" : ""}`}><ListIcon className="h-3.5 w-3.5" /></button>
+              <button data-testid="view-toggle-timeline" onClick={() => setView("timeline")} className={`p-1.5 rounded-md ${view === "timeline" ? "bg-surface-2" : ""}`}><GanttChartSquare className="h-3.5 w-3.5" /></button>
             </div>
             <Button data-testid="open-create-project-btn" size="sm" className="gap-1.5" onClick={() => setOpen(true)}><Plus className="h-3.5 w-3.5" /> New Project</Button>
           </div>
@@ -98,6 +100,8 @@ export default function Projects() {
             </div>
           ))}
         </div>
+      ) : view === "timeline" ? (
+        <ProjectsTimeline projects={projects} />
       ) : (
         <div className="space-y-2" data-testid="projects-list">
           {projects.map((p) => (

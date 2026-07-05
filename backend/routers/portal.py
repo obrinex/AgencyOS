@@ -25,6 +25,10 @@ class MeetingRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class SignRequest(BaseModel):
+    signature_name: str
+
+
 async def get_client_id(user: dict) -> str:
     if not user.get("client_id"):
         raise HTTPException(status_code=403, detail="No client account linked")
@@ -92,6 +96,21 @@ async def portal_contracts(user: dict = Depends(require_client)):
     client_id = await get_client_id(user)
     contracts = await db.contracts.find({"client_id": client_id}).to_list(200)
     return serialize_list(contracts)
+
+
+@router.post("/contracts/{contract_id}/sign")
+async def portal_sign_contract(contract_id: str, payload: SignRequest, user: dict = Depends(require_client)):
+    client_id = await get_client_id(user)
+    contract = await db.contracts.find_one({"_id": to_object_id(contract_id), "client_id": client_id})
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.contracts.update_one({"_id": contract["_id"]}, {"$set": {
+        "status": "signed", "signature_name": payload.signature_name, "signed_at": now,
+    }})
+    await log_audit(user["id"], "sign_contract", "contract", contract_id)
+    updated = await db.contracts.find_one({"_id": contract["_id"]})
+    return serialize_doc(updated)
 
 
 @router.get("/files")

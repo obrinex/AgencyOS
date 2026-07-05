@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import DatePicker from "@/components/DatePicker";
+import { PenLine, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -22,6 +23,8 @@ export default function Contracts() {
   const [clients, setClients] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [signTarget, setSignTarget] = useState(null);
+  const [signatureName, setSignatureName] = useState("");
 
   const load = async () => {
     const [c, cl] = await Promise.all([api.get("/contracts"), api.get("/clients")]);
@@ -46,8 +49,25 @@ export default function Contracts() {
   };
 
   const setStatus = async (id, status) => {
-    await api.put(`/contracts/${id}`, { status, signed_at: status === "signed" ? new Date().toISOString() : undefined });
+    if (status === "signed") {
+      setSignTarget(id);
+      return;
+    }
+    await api.put(`/contracts/${id}`, { status });
     load();
+  };
+
+  const submitSign = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post(`/contracts/${signTarget}/sign`, { signature_name: signatureName });
+      toast.success("Contract marked as signed");
+      setSignTarget(null);
+      setSignatureName("");
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
   };
 
   if (!contracts) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
@@ -73,6 +93,9 @@ export default function Contracts() {
                 </Select>
               </div>
               {c.renewal_date && <p className="mt-2 text-xs font-mono text-graphite">Renews {format(new Date(c.renewal_date), "MMM d, yyyy")}</p>}
+              {c.status === "signed" && c.signature_name && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-success"><CheckCircle2 className="h-3.5 w-3.5" /> Signed by {c.signature_name}</p>
+              )}
             </Card>
           ))}
         </div>
@@ -95,6 +118,17 @@ export default function Contracts() {
               <div className="space-y-1"><Label>Renewal Date</Label><DatePicker testId="contract-form-renewal" value={form.renewal_date} onChange={(v) => setForm({ ...form, renewal_date: v })} /></div>
             </div>
             <DialogFooter><Button type="submit" data-testid="contract-form-submit">Create Contract</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!signTarget} onOpenChange={(o) => !o && setSignTarget(null)}>
+        <DialogContent className="bg-surface-1 border-white/10" data-testid="staff-sign-contract-dialog">
+          <DialogHeader><DialogTitle>Record Signature</DialogTitle></DialogHeader>
+          <form onSubmit={submitSign} className="space-y-3">
+            <p className="text-sm text-graphite">Record who signed this contract (e.g. captured offline or via the client portal).</p>
+            <div className="space-y-1"><Label>Signature Name *</Label><Input data-testid="staff-signature-input" required value={signatureName} onChange={(e) => setSignatureName(e.target.value)} className="bg-surface-2 border-white/10 font-display italic" /></div>
+            <DialogFooter><Button type="submit" data-testid="staff-signature-submit" className="gap-1.5"><PenLine className="h-3.5 w-3.5" /> Mark as Signed</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

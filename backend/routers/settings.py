@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr
 
 from database import db, serialize_doc, serialize_list, to_object_id
 from auth_utils import get_current_user, require_admin, require_staff, hash_password, log_audit
+from email_service import send_invite_email
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -73,7 +74,7 @@ async def invite_team_member(payload: TeamInvite, user: dict = Depends(require_a
     }
     res = await db.users.insert_one(doc)
     await log_audit(user["id"], "invite_team_member", "user", str(res.inserted_id))
-    print(f"[TEAM INVITE EMAIL] To: {payload.email} | Temp login: {payload.email} / {temp_password}")
+    await send_invite_email(payload.email, payload.name, temp_password)
     member = await db.users.find_one({"_id": res.inserted_id})
     member = serialize_doc(member)
     member.pop("password_hash", None)

@@ -39,6 +39,7 @@ import PortalContracts from "@/pages/portal/PortalContracts";
 import PortalFiles from "@/pages/portal/PortalFiles";
 import PortalSupport from "@/pages/portal/PortalSupport";
 import PortalTicketDetail from "@/pages/portal/PortalTicketDetail";
+import PublicProposal from "@/pages/PublicProposal";
 
 function App() {
   return (
@@ -48,6 +49,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/proposal/:token" element={<PublicProposal />} />
 
             <Route
               element={

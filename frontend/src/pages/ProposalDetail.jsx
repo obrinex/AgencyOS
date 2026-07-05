@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Sparkles, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Sparkles, Save, Loader2, Copy, Send, CheckCircle2, XCircle } from "lucide-react";
 import api from "@/lib/api";
 import { API } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
 
 const STATUSES = ["draft", "sent", "viewed", "accepted", "rejected"];
@@ -21,6 +22,8 @@ export default function ProposalDetail() {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scope, setScope] = useState("");
+  const [shareEmail, setShareEmail] = useState("");
+  const [sharing, setSharing] = useState(false);
 
   const load = async () => {
     const { data } = await api.get(`/proposals/${id}`);
@@ -45,6 +48,28 @@ export default function ProposalDetail() {
   const changeStatus = async (status) => {
     await api.put(`/proposals/${id}`, { status });
     load();
+  };
+
+  const shareLink = proposal ? `${window.location.origin}/proposal/${proposal.share_token}` : "";
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(shareLink);
+    toast.success("Share link copied");
+  };
+
+  const shareViaEmail = async () => {
+    if (!shareEmail.trim()) { toast.error("Enter a recipient email"); return; }
+    setSharing(true);
+    try {
+      await api.post(`/proposals/${id}/share-email`, { email: shareEmail });
+      toast.success("Proposal emailed to client");
+      setShareEmail("");
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setSharing(false);
+    }
   };
 
   const generateWithAI = async () => {
@@ -107,6 +132,29 @@ export default function ProposalDetail() {
             {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Generate
           </Button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-surface-1 p-4 space-y-3">
+        <p className="font-mono text-[10px] uppercase text-graphite">Share & E-Signature</p>
+        {proposal.status === "accepted" || proposal.status === "rejected" ? (
+          <p className={`flex items-center gap-1.5 text-sm ${proposal.status === "accepted" ? "text-success" : "text-danger"}`} data-testid="proposal-signature-status">
+            {proposal.status === "accepted" ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+            {proposal.status === "accepted" ? "Accepted" : "Rejected"} by {proposal.signature_name} ({proposal.signer_email})
+          </p>
+        ) : (
+          <>
+            <div className="flex gap-2">
+              <Input readOnly value={shareLink} data-testid="proposal-share-link" className="bg-surface-2 border-white/10 font-mono text-xs" />
+              <Button size="icon" variant="outline" className="border-white/10 shrink-0" onClick={copyLink} data-testid="proposal-copy-link-btn"><Copy className="h-3.5 w-3.5" /></Button>
+            </div>
+            <div className="flex gap-2">
+              <Input placeholder="client@company.com" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} data-testid="proposal-share-email-input" className="bg-surface-2 border-white/10" />
+              <Button onClick={shareViaEmail} disabled={sharing} className="gap-1.5 shrink-0" data-testid="proposal-share-email-btn">
+                {sharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send
+              </Button>
+            </div>
+          </>
+        )}
       </div>
 
       <Textarea

@@ -1,0 +1,41 @@
+{
+  "summary": "Tested Phase 2 additions: Resend email integration (portal welcome, team invite, invoice send, forgot-password), Projects Gantt/Timeline view, Contract e-signature (staff + client portal), and Proposal e-signature via public no-auth share link. All 3 new features work correctly. Created backend/tests/test_phase2_features.py (13 tests, all passing) plus full Playwright UI verification of Timeline, Contracts signing, and the public Proposal signing flow in a fresh unauthenticated context. Regression smoke test (login, Kanban/List views, CRM pipeline, Invoices list) passed with no console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "email delivery (Resend)", "issue": "As expected/documented: Resend free-tier rejects delivery to any address other than the account owner's verified email ('You can only send testing emails to your own email address'). Confirmed in backend logs. This is NOT a bug - all APIs (create_portal_user, invite_team_member, send_invoice, forgot_password, share-email) still return 200 and complete their DB updates/UI state correctly despite the email send failing silently in the background."},
+      {"endpoint": "backend/tests/test_auth.py::TestBruteForce", "issue": "Pre-existing test assertion issue (not introduced in this iteration): after 5 failed logins, backend correctly returns 429 (rate-limited) but test asserts 401 - test itself is slightly stale, actual behavior (lockout) is working."},
+      {"endpoint": "backend/tests/test_auth.py::TestCORS", "issue": "Pre-existing: CORS_ORIGINS=\"*\" in backend/.env is a wildcard even though cookies (credentials) are used. Not part of Phase 2 scope, flagged again for visibility since it's a recurring finding from prior iterations."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_features.py",
+    "/app/test_reports/pytest/pytest_phase2_iter3.xml",
+    "/app/test_reports/pytest/pytest_results_iter3.xml"
+  ],
+  "action_items": [
+    "No action required for Phase 2 features - all working as expected.",
+    "Optional (low priority, pre-existing from earlier iterations): tighten CORS_ORIGINS from wildcard to explicit origin list, and align brute-force test assertion with actual 429 status code."
+  ],
+  "critical_code_review_comments": [
+    "public.py, documents.py, portal.py are clean, small, properly async, use Pydantic validation, and correctly exclude MongoDB _id via serialize_doc.",
+    "email_service.py gracefully catches exceptions per-send and logs instead of raising - correct design so email failures never break the main request flow.",
+    "ProjectsTimeline.jsx computes date ranges client-side well; falls back to created_at + 21 days when no end_date - reasonable default. Minor nit: no visible 'today' marker line on the Gantt, but not a functional issue.",
+    "Ownership checks verified: portal.sign_contract correctly scopes by client_id (tested cross-client isolation - returns 404 for another client's contract, confirmed via automated test)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2_features.py"
+  ],
+  "success_rate": {"backend": "100% (13/13 new Phase2 tests, 11/13 pre-existing regression tests passing - 2 pre-existing minor test-assertion issues unrelated to Phase 2)", "frontend": "100% (all Phase 2 UI flows + regression smoke test passing)"},
+  "test_credentials": "admin@obrinex.com / AgencyOS@2026 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created multiple TEST_ prefixed clients (via won-lead automation), contracts (TEST_ESign Contract, TEST Contract Portal Sign, TEST Contract Staff Sign, TEST Other Contract), proposals (TEST Proposal ShareEmail, TEST Proposal Accept, TEST Proposal NoAuth, TEST Proposal Public Sign, TEST_UI Proposal Sign Flow), invoices, leads, and portal/team users with 'test_' prefixed emails during both pytest and Playwright runs. Recommend main agent bulk-delete documents/collections where company_name/title starts with 'TEST' and emails start with 'test_' or 'test' before demo/production use.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 3 (this run) confirms all 3 Phase 2 features (Resend email integration, Projects Timeline/Gantt, Contract+Proposal e-signature incl. public no-auth link) are fully functional. Note: clients have NO direct POST /api/clients create endpoint - they are only created via the won-lead automation (see test_won_automation.py / test_phase2_features.py::_create_client_via_won_lead helper) - use that pattern for any future test needing a client fixture. Resend free-tier email delivery failures in backend logs are expected/by-design, not bugs.",
+  "rca_of_the_issue": "N/A - no blocking bugs found in Phase 2 scope."
+}

@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr
 
 from database import db, serialize_doc, serialize_list, to_object_id
 from auth_utils import get_current_user, require_staff, require_admin, hash_password, log_audit
+from email_service import send_welcome_email
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
 
@@ -123,5 +124,5 @@ async def create_portal_user(client_id: str, payload: PortalUserCreate, user: di
     res = await db.users.insert_one(doc)
     await db.clients.update_one({"_id": client["_id"]}, {"$set": {"portal_user_id": str(res.inserted_id)}})
     await log_audit(user["id"], "create_portal_user", "client", client_id)
-    print(f"[WELCOME EMAIL] To: {payload.email} | Portal login: {payload.email} / {temp_password}")
-    return {"email": payload.email, "temp_password": temp_password, "message": "Portal user created. Temporary password generated (see console log / share securely)."}
+    await send_welcome_email(payload.email, payload.name, temp_password)
+    return {"email": payload.email, "temp_password": temp_password, "message": "Portal user created. Welcome email sent (or logged if email is not configured)."}
