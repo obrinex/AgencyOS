@@ -1,0 +1,113 @@
+{
+  "theme": "Dark",
+  "archetype": "Archetype 4 (Swiss & High-Contrast)",
+  "brand": {
+    "name": "Obrinex",
+    "product": "AgencyOS",
+    "mascot": "Orbi (geometric robot)",
+    "personality": [
+      "precise",
+      "geometric",
+      "bold",
+      "technological",
+      "high-contrast",
+      "minimalist"
+    ]
+  },
+  "colors": {
+    "background": "#131315",
+    "foreground": "#F4F4F5",
+    "surface": {
+      "level1": "#18181A",
+      "level2": "#222225",
+      "level3": "#2D2D30",
+      "glass": "rgba(19, 19, 21, 0.7)"
+    },
+    "neutrals": {
+      "carbon": "#4A4A4E",
+      "graphite": "#85858C",
+      "ash": "#B5B5BC"
+    },
+    "semantic": {
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "danger": "#EF4444",
+      "info": "#3B82F6"
+    },
+    "border": "rgba(74, 74, 78, 0.3)"
+  },
+  "typography": {
+    "fonts": {
+      "display": "Archivo, sans-serif",
+      "body": "Archivo, sans-serif",
+      "mono": "'Space Mono', monospace"
+    },
+    "scale": {
+      "h1": "text-4xl tracking-tighter font-bold",
+      "h2": "text-2xl tracking-tight font-semibold",
+      "h3": "text-xl tracking-tight font-medium",
+      "body": "text-base tracking-normal",
+      "meta": "text-sm font-mono tracking-tight text-[#85858C]",
+      "label": "text-xs font-mono uppercase tracking-[0.2em] text-[#B5B5BC]"
+    }
+  },
+  "layout": {
+    "spacing": "Strict 8px scale. Generous internal padding (p-6, p-8) for containers, tight gaps (gap-4) for data clusters.",
+    "radius": "rounded-xl for main panels/cards, rounded-md for inputs/buttons.",
+    "borders": "1px hairline borders (border-white/10 or border-[#4A4A4E]/30) everywhere to separate dark surfaces without muddy shadows.",
+    "architecture": "Inverted L-shape chrome: Resizable left sidebar, sticky top header, main content area."
+  },
+  "components": {
+    "sidebar": "Darkest background (#131315). Navigation items use Space Mono for badges/counts. Hover state adds subtle background (surface.level1) and left border highlight.",
+    "command_palette": "Triggered by cmd+k. Centered overlay. Glassmorphism background. Single pill input. Results have rounded keycaps for shortcuts.",
+    "kanban": "Subtle column backgrounds (surface.level1). Cards have 1px border. Drag & drop adds a vibrant border highlight based on card status.",
+    "tables": "Dense. Row separation via 1px border-b. Hover state shifts row to surface.level2. No vertical borders.",
+    "skeletons": "Shimmer effect using Carbon to Graphite gradient.",
+    "toasts": "Sonner toasts. Dark surface, border color indicates status (e.g., success/error).",
+    "empty_states": "Centered. Uses abstract geometric textures at 10% opacity in background. Archivo heading, Space Mono instructions."
+  },
+  "media": {
+    "avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1758534063829-a72058381e21?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMG1hbiUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4MzI3OTM4NHww&ixlib=rb-4.1.0&q=85",
+        "category": "team_member_avatar",
+        "description": "Team member avatar (man)"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1774897778836-3b13763e71b3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMHdvbWFuJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzgzMjc5Mzg0fDA&ixlib=rb-4.1.0&q=85",
+        "category": "client_avatar",
+        "description": "Client avatar (woman)"
+      }
+    ],
+    "logos": [
+      {
+        "url": "https://images.unsplash.com/photo-1760386129108-d17b9cdfc4fa?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwzfHxtb2Rlcm4lMjB0ZWNoJTIwY29tcGFueSUyMGxvZ298ZW58MHx8fHwxNzgzMjc5Mzg0fDA&ixlib=rb-4.1.0&q=85",
+        "category": "company_logo",
+        "description": "Client company logo in CRM"
+      },
+      {
+        "url": "https://images.pexels.com/photos/15863044/pexels-photo-15863044.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "company_logo",
+        "description": "Client company logo in CRM"
+      }
+    ],
+    "textures": [
+      {
+        "url": "https://images.unsplash.com/photo-1517241034903-9a4c3ab12f00?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGdlb21ldHJpYyUyMGRhcmslMjBtaW5pbWFsJTIwdGV4dHVyZXxlbnwwfHx8fDE3ODMyNzkzODV8MA&ixlib=rb-4.1.0&q=85",
+        "category": "empty_state_background",
+        "description": "Abstract texture for empty states"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "CRITICAL: Use ONLY React + Tailwind + pure JavaScript (.js/.jsx files). DO NOT USE TypeScript (.tsx/.ts).",
+    "All interactive and key informational elements MUST include a `data-testid` attribute (kebab-case, role-based).",
+    "Install and use `lucide-react` for all icons.",
+    "Install and use `recharts` for Analytics and Finance dashboards. Charts must have #131315 backgrounds and use the semantic colors for data lines.",
+    "Customize Shadcn components heavily to strip standard Vercel borders and replace them with Obrinex monochrome variables (1px hairline borders).",
+    "For the Command Palette (cmd+k), use `cmdk` or Shadcn Command. Style it with backdrop-blur-xl and glassmorphism settings provided.",
+    "Ensure all semantic states (success, warning, etc.) use the provided hex codes instead of Tailwind default colors.",
+    "Headers must be sticky with z-50 and backdrop blur. Do not use fully transparent headers.",
+    "All navigation elements must be visible on desktop (no hamburger menus on md+ screens)."
+  ]
+}
