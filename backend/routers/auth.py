@@ -43,17 +43,16 @@ class ResetPasswordRequest(BaseModel):
 @router.post("/login")
 async def login(payload: LoginRequest, request: Request, response: Response):
     email = payload.email.lower()
-    identifier = f"{request.client.host}:{email}"
-    await check_brute_force(identifier)
+    await check_brute_force(email)
 
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
-        await record_failed_attempt(identifier)
+        await record_failed_attempt(email)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
-    await clear_attempts(identifier)
+    await clear_attempts(email)
     uid = str(user["_id"])
 
     if user.get("two_fa_enabled"):

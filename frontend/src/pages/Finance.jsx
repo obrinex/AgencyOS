@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import DatePicker from "@/components/DatePicker";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -111,7 +112,7 @@ export default function Finance() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label>Category</Label><Input data-testid="expense-form-category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <div className="space-y-1"><Label>Amount ($) *</Label><Input data-testid="expense-form-amount" type="number" required value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="bg-surface-2 border-white/10" /></div>
-              <div className="space-y-1"><Label>Date</Label><Input data-testid="expense-form-date" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+              <div className="space-y-1"><Label>Date</Label><DatePicker testId="expense-form-date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} /></div>
               <div className="space-y-1"><Label>Vendor</Label><Input data-testid="expense-form-vendor" value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} className="bg-surface-2 border-white/10" /></div>
             </div>
             <DialogFooter><Button type="submit" data-testid="expense-form-submit">Add Expense</Button></DialogFooter>

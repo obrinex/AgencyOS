@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
 
 from database import db, serialize_doc, serialize_list, to_object_id
-from auth_utils import get_current_user, require_admin, hash_password, log_audit
+from auth_utils import get_current_user, require_admin, require_staff, hash_password, log_audit
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -48,7 +48,7 @@ async def update_company_settings(payload: CompanySettings, user: dict = Depends
 
 
 @router.get("/team")
-async def list_team(user: dict = Depends(get_current_user)):
+async def list_team(user: dict = Depends(require_staff)):
     members = await db.users.find({"role": {"$in": ["admin", "team_member"]}}).to_list(200)
     result = []
     for m in members:

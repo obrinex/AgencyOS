@@ -152,7 +152,7 @@ async def create_checkout(invoice_id: str, request: Request, user: dict = Depend
         raise HTTPException(status_code=404, detail="Invoice not found")
     if user["role"] == "client" and invoice["client_id"] != user.get("client_id"):
         raise HTTPException(status_code=403, detail="Not authorized")
-    origin = request.headers.get("origin") or f"https://{request.headers.get('host')}"
+    origin = os.environ["FRONTEND_URL"]
     success_url = f"{origin}/invoices/{invoice_id}?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/invoices/{invoice_id}"
 
@@ -185,7 +185,7 @@ async def checkout_status(session_id: str, request: Request, user: dict = Depend
     if tx["payment_status"] == "paid":
         return {"payment_status": "paid", "status": "complete"}
 
-    origin = request.headers.get("origin") or f"https://{request.headers.get('host')}"
+    origin = os.environ["FRONTEND_URL"]
     stripe_checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url=f"{origin}/api/webhook/stripe")
     status = await stripe_checkout.get_checkout_status(session_id)
 

@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import DatePicker from "@/components/DatePicker";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -90,8 +91,8 @@ export default function Contracts() {
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1"><Label>Start Date</Label><Input data-testid="contract-form-start" type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} className="bg-surface-2 border-white/10" /></div>
-              <div className="space-y-1"><Label>Renewal Date</Label><Input data-testid="contract-form-renewal" type="date" value={form.renewal_date} onChange={(e) => setForm({ ...form, renewal_date: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+              <div className="space-y-1"><Label>Start Date</Label><DatePicker testId="contract-form-start" value={form.start_date} onChange={(v) => setForm({ ...form, start_date: v })} /></div>
+              <div className="space-y-1"><Label>Renewal Date</Label><DatePicker testId="contract-form-renewal" value={form.renewal_date} onChange={(v) => setForm({ ...form, renewal_date: v })} /></div>
             </div>
             <DialogFooter><Button type="submit" data-testid="contract-form-submit">Create Contract</Button></DialogFooter>
           </form>

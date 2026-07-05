@@ -60,7 +60,7 @@ export default function InvoiceDetail() {
   const payNow = async () => {
     setPaying(true);
     try {
-      const { data } = await api.post(`/invoices/${id}/checkout`, {}, { headers: { Origin: window.location.origin } });
+      const { data } = await api.post(`/invoices/${id}/checkout`, {});
       window.location.href = data.url;
     } catch (e) {
       toast.error("Failed to start checkout");

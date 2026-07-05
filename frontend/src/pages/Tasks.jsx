@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
+import DatePicker from "@/components/DatePicker";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -40,7 +41,7 @@ export default function Tasks() {
   const create = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/tasks", form);
+      await api.post("/tasks", { ...form, assignee_id: user.id });
       toast.success("Task created");
       setOpen(false);
       setForm(emptyForm);
@@ -104,7 +105,7 @@ export default function Tasks() {
                   <SelectContent>{Object.entries(PRIORITY_CONFIG).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1"><Label>Due Date</Label><Input data-testid="task-form-due-date" type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+              <div className="space-y-1"><Label>Due Date</Label><DatePicker testId="task-form-due-date" value={form.due_date} onChange={(v) => setForm({ ...form, due_date: v })} /></div>
             </div>
             <DialogFooter><Button type="submit" data-testid="task-form-submit">Create Task</Button></DialogFooter>
           </form>

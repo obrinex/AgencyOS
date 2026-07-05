@@ -49,7 +49,7 @@ export default function CommandPalette({ open, onOpenChange }) {
   };
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} data-testid="command-palette">
+    <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false} data-testid="command-palette">
       <CommandInput
         data-testid="command-palette-input"
         placeholder="Search clients, projects, tasks, invoices..."

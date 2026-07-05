@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatApiError } from "@/lib/api";
@@ -12,7 +12,6 @@ import { toast } from "sonner";
 
 export default function Login() {
   const { login, verify2FA, user } = useAuth();
-  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -21,7 +20,7 @@ export default function Login() {
   const [error, setError] = useState("");
 
   if (user && user !== false) {
-    navigate(user.role === "client" ? "/portal" : "/dashboard", { replace: true });
+    return <Navigate to={user.role === "client" ? "/portal" : "/dashboard"} replace />;
   }
 
   const handleLogin = async (e) => {

@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useAuth } from "@/contexts/AuthContext";
+import DatePicker from "@/components/DatePicker";
 import { toast } from "sonner";
 
 const emptyTask = { title: "", priority: "medium", due_date: "" };
@@ -18,6 +20,7 @@ const emptyTask = { title: "", priority: "medium", due_date: "" };
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [project, setProject] = useState(null);
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskForm, setTaskForm] = useState(emptyTask);
@@ -38,7 +41,7 @@ export default function ProjectDetail() {
   const createTask = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/tasks", { ...taskForm, related_type: "project", related_id: id });
+      await api.post("/tasks", { ...taskForm, related_type: "project", related_id: id, assignee_id: user.id });
       toast.success("Task added");
       setTaskOpen(false);
       setTaskForm(emptyTask);
@@ -152,7 +155,7 @@ export default function ProjectDetail() {
                   <SelectContent>{Object.entries(PRIORITY_CONFIG).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1"><Label>Due Date</Label><Input data-testid="task-form-due-date" type="date" value={taskForm.due_date} onChange={(e) => setTaskForm({ ...taskForm, due_date: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+              <div className="space-y-1"><Label>Due Date</Label><DatePicker testId="task-form-due-date" value={taskForm.due_date} onChange={(v) => setTaskForm({ ...taskForm, due_date: v })} /></div>
             </div>
             <DialogFooter><Button type="submit" data-testid="task-form-submit">Add Task</Button></DialogFooter>
           </form>
