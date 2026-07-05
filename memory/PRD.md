@@ -68,12 +68,8 @@ stored at `/app/design_guidelines.json`.
   `/settings/team` RBAC leak, Command Palette cmdk filter conflict, Login render warning, Tasks
   assignee defaulting, native date inputs → shadcn Calendar/Popover DatePicker.
 
-## Explicitly Deferred (Phase 2 — not built yet)
-- Gantt/Timeline project views (Kanban/List/Calendar shipped; Gantt not built).
-- E-signatures for proposals/contracts (status tracking exists, no signature capture).
-- Real email delivery — Resend not configured (no API key provided); emails are logged to
-  backend console only (**MOCKED**).
-- Live Google Calendar/Meet, Zoom, Microsoft Teams, Calendly OAuth sync (meetings are tracked
+## Explicitly Deferred (Phase 3 — future, only if needed)
+- Live Google Calendar/Meet, Zoom, Microsoft Teams, Calendly OAuth sync (meetings tracked
   internally only).
 - Multi-channel Communication Hub (Slack/Discord/WhatsApp Business/Telegram/call logs) — only
   in-app notifications + ticket threads exist.
@@ -81,14 +77,28 @@ stored at `/app/design_guidelines.json`.
 - n8n/Zapier/Make native connectors (generic `/api/webhooks/lead-capture` exists).
 - Custom domain/branding theming UI beyond company name/currency.
 - Cascade delete of dependent records when a client is removed (data-integrity nice-to-have).
+- Resend sender domain verification (currently `onboarding@resend.dev` test sender — free tier
+  only delivers to the Resend account owner's own verified email; add a verified custom domain
+  in Resend dashboard for production delivery to arbitrary client addresses).
+
+## Phase 2 (2026-07-05) — Completed
+- **Real email delivery via Resend** (`backend/email_service.py`): welcome emails (portal
+  creation), team invite emails, invoice emails, password reset emails, proposal share emails.
+  Falls back to console log only if `RESEND_API_KEY` is unset.
+- **Gantt/Timeline view for Projects**: `ProjectsTimeline.jsx`, 3rd view toggle on `/projects`.
+- **E-Signature** (lightweight, built-in, no 3rd-party e-sign API):
+  - Contracts: staff mark-as-signed or client signs from Portal — both typed-name, ownership-scoped.
+  - Proposals: public unauthenticated share link `/proposal/:token` (new `public.py` router) —
+    lead/prospect views + Accepts/Declines with typed name+email, no login required.
+- Tested via testing subagent (iteration 3): 13/13 new backend tests + full Playwright coverage
+  passing, no critical bugs. Test data cleaned from DB.
 
 ## Test Credentials
 See `/app/memory/test_credentials.md` (admin@obrinex.com / AgencyOS@2026). Team/client portal
 accounts are generated dynamically via Settings/Client Detail with temp passwords shown once.
 
 ## Next Action Items / Backlog
-- P0: None blocking — core E2E flows verified via 2 testing rounds (regression fixes confirmed).
-- P1: Resend email integration (needs user's Resend API key) to stop console-mocking emails;
-  Gantt/Timeline project view; e-signature for contracts/proposals.
+- P0: None blocking — core E2E flows verified via 3 testing rounds.
+- P1: Verified Resend domain for production email delivery (user-provided domain needed).
 - P2: Google Calendar/Zoom/Meet OAuth sync; Slack/WhatsApp/Telegram channels; CSV import; PDF
   export; n8n/Zapier native connectors; cascade-delete integrity job.
