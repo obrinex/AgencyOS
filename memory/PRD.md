@@ -93,12 +93,41 @@ stored at `/app/design_guidelines.json`.
 - Tested via testing subagent (iteration 3): 13/13 new backend tests + full Playwright coverage
   passing, no critical bugs. Test data cleaned from DB.
 
+## Phase 3 (2026-07-05) — Completed
+- **Multi-currency finance**: base company currency = INR (set in Settings → Company, dropdown
+  INR/USD). Invoices & Expenses each carry their own `currency` (INR/USD) + manually-entered
+  `conversion_rate` (no global default rate — per-transaction only, by explicit user choice).
+  `backend/finance_utils.py::to_base()` converts any transaction into base currency; reused
+  across `finance.py` (summary), `dashboard.py` (stats), `clients.py` (revenue/outstanding),
+  `portal.py` (client portal outstanding). Frontend `lib/currency.js::formatMoney()` renders ₹
+  for aggregated/base amounts and the record's own currency symbol for individual invoice/expense
+  line items.
+- **Expense types**: every expense now has `expense_type` = personal_withdrawal / business_expense
+  / unclassified. Finance page shows a pie-chart breakdown by type (`expense_breakdown` in
+  `/api/finance/summary`).
+- **Personal Notes**: new `/notes` page + `backend/routers/notes.py` — private per-user
+  (scoped by `user_id`), create/edit/delete/pin, color-coded, pinned notes sort to top.
+- **Help page**: new static `/help` page — searchable accordion covering how to use every module
+  (no interactive tour, per explicit user request).
+- Existing invoices/expenses/payment_transactions test data cleared and invoice counter reset
+  when the currency schema changed (per user instruction, no backfill/migration needed).
+- Tested via testing subagent (iteration 4): 39/40 automated backend tests + full Playwright
+  coverage of Finance/Invoices/Notes/Help/Settings/Clients/Analytics/Portal + regression smoke
+  test of all Phase 1/2 modules — 0 blocking bugs.
+
 ## Test Credentials
 See `/app/memory/test_credentials.md` (admin@obrinex.com / AgencyOS@2026). Team/client portal
 accounts are generated dynamically via Settings/Client Detail with temp passwords shown once.
 
 ## Next Action Items / Backlog
-- P0: None blocking — core E2E flows verified via 3 testing rounds.
+- P0: None blocking — core E2E flows verified via 4 testing rounds.
 - P1: Verified Resend domain for production email delivery (user-provided domain needed).
 - P2: Google Calendar/Zoom/Meet OAuth sync; Slack/WhatsApp/Telegram channels; CSV import; PDF
   export; n8n/Zapier native connectors; cascade-delete integrity job.
+- P2: Stripe checkout currently hardcodes `currency="usd"` regardless of the invoice's own
+  currency field — should map to `invoice["currency"]` once real Stripe payments (beyond the
+  current test key) are prioritized.
+- P2 (pre-existing, flagged again in iteration 4): tighten `CORS_ORIGINS` from `*` wildcard to an
+  explicit origin list since cookies/credentials are used.
+- P2 (pre-existing, flagged again in iteration 4): no `DELETE /api/clients/{id}/portal-user`
+  endpoint — deleting a client can orphan its linked portal-role user account.
