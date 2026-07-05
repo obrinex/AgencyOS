@@ -29,6 +29,8 @@ class InvoiceCreate(BaseModel):
     due_date: Optional[str] = None
     is_recurring: Optional[bool] = False
     recurrence_interval: Optional[str] = None
+    currency: Optional[str] = "USD"
+    conversion_rate: Optional[float] = 1.0
 
 
 class InvoiceUpdate(BaseModel):
@@ -36,6 +38,8 @@ class InvoiceUpdate(BaseModel):
     tax: Optional[float] = None
     due_date: Optional[str] = None
     status: Optional[str] = None
+    currency: Optional[str] = None
+    conversion_rate: Optional[float] = None
 
 
 class ExpenseCreate(BaseModel):
@@ -45,6 +49,9 @@ class ExpenseCreate(BaseModel):
     date: str
     vendor: Optional[str] = None
     recurring: Optional[bool] = False
+    currency: Optional[str] = "USD"
+    conversion_rate: Optional[float] = 1.0
+    expense_type: Optional[str] = "unclassified"
 
 
 def _calc_totals(line_items: list, tax: float):
