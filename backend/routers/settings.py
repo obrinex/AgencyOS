@@ -7,6 +7,7 @@ from pydantic import BaseModel, EmailStr
 from database import db, serialize_doc, serialize_list, to_object_id
 from auth_utils import get_current_user, require_admin, require_staff, hash_password, log_audit
 from email_service import send_invite_email
+from finance_utils import SUPPORTED_CURRENCIES
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -15,7 +16,7 @@ class CompanySettings(BaseModel):
     company_name: Optional[str] = None
     logo_url: Optional[str] = None
     custom_domain: Optional[str] = None
-    currency: Optional[str] = "USD"
+    currency: Optional[str] = "INR"
 
 
 class TeamInvite(BaseModel):
@@ -35,13 +36,15 @@ class TeamUpdate(BaseModel):
 async def get_company_settings(user: dict = Depends(get_current_user)):
     settings = await db.company_settings.find_one({"key": "main"})
     if not settings:
-        settings = {"key": "main", "company_name": "Obrinex", "logo_url": None, "custom_domain": None, "currency": "USD"}
+        settings = {"key": "main", "company_name": "Obrinex", "logo_url": None, "custom_domain": None, "currency": "INR"}
         await db.company_settings.insert_one(settings)
     return serialize_doc(settings)
 
 
 @router.put("/company")
 async def update_company_settings(payload: CompanySettings, user: dict = Depends(require_admin)):
+    if payload.currency and payload.currency not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=400, detail=f"Currency must be one of {SUPPORTED_CURRENCIES}")
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
     await db.company_settings.update_one({"key": "main"}, {"$set": updates}, upsert=True)
     settings = await db.company_settings.find_one({"key": "main"})

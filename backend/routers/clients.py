@@ -7,6 +7,7 @@ from pydantic import BaseModel, EmailStr
 from database import db, serialize_doc, serialize_list, to_object_id
 from auth_utils import get_current_user, require_staff, require_admin, hash_password, log_audit
 from email_service import send_welcome_email
+from finance_utils import to_base
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
 
@@ -38,8 +39,8 @@ async def list_clients(user: dict = Depends(get_current_user)):
         cid = str(c["_id"])
         invoices = await db.invoices.find({"client_id": cid}).to_list(1000)
         projects_count = await db.projects.count_documents({"client_id": cid})
-        outstanding = sum(i["total"] for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
-        revenue = sum(i["total"] for i in invoices if i["status"] == "paid")
+        outstanding = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
+        revenue = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] == "paid")
         c["outstanding_amount"] = outstanding
         c["revenue_generated"] = revenue
         c["projects_count"] = projects_count
@@ -57,8 +58,8 @@ async def get_client(client_id: str, user: dict = Depends(get_current_user)):
     contacts = await db.contacts.find({"client_id": client_id}).to_list(200)
     tickets = await db.tickets.find({"client_id": client_id}).to_list(200)
     contracts = await db.contracts.find({"client_id": client_id}).to_list(200)
-    outstanding = sum(i["total"] for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
-    revenue = sum(i["total"] for i in invoices if i["status"] == "paid")
+    outstanding = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
+    revenue = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] == "paid")
     data = serialize_doc(client)
     data["projects"] = serialize_list(projects)
     data["invoices"] = serialize_list(invoices)

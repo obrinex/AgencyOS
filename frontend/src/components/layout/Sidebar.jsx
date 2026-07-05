@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, KanbanSquare, Users, Building2, FolderKanban, CheckSquare,
   DollarSign, Receipt, FileText, FileSignature, LifeBuoy, BookOpen, Lock,
-  FolderOpen, Zap, BarChart3, Settings, ChevronsLeft, ChevronsRight,
+  FolderOpen, Zap, BarChart3, Settings, ChevronsLeft, ChevronsRight, StickyNote, HelpCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -43,6 +43,7 @@ const NAV_SECTIONS = [
       { to: "/knowledge-base", label: "Knowledge Base", icon: BookOpen, testId: "nav-kb" },
       { to: "/vault", label: "Password Vault", icon: Lock, testId: "nav-vault" },
       { to: "/files", label: "Files", icon: FolderOpen, testId: "nav-files" },
+      { to: "/notes", label: "Notes", icon: StickyNote, testId: "nav-notes" },
     ],
   },
   {
@@ -51,6 +52,7 @@ const NAV_SECTIONS = [
       { to: "/automations", label: "Automations", icon: Zap, testId: "nav-automations" },
       { to: "/analytics", label: "Analytics", icon: BarChart3, testId: "nav-analytics" },
       { to: "/settings", label: "Settings", icon: Settings, testId: "nav-settings" },
+      { to: "/help", label: "Help", icon: HelpCircle, testId: "nav-help" },
     ],
   },
 ];

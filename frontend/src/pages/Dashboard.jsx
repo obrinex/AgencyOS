@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { STAGE_CONFIG } from "@/lib/statusConfig";
+import { formatMoney } from "@/lib/currency";
 import { formatDistanceToNow, format } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -27,8 +28,6 @@ function KpiCard({ icon: Icon, label, value, sub, testId }) {
     </Card>
   );
 }
-
-const currency = (n) => `$${(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -80,14 +79,14 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-revenue" icon={DollarSign} label="Revenue" value={currency(stats.revenue)} sub="Total paid to date" />
-        <KpiCard testId="kpi-mrr" icon={TrendingUp} label="MRR" value={currency(stats.mrr)} sub="Monthly recurring" />
-        <KpiCard testId="kpi-arr" icon={TrendingUp} label="ARR" value={currency(stats.arr)} sub="Annualized" />
-        <KpiCard testId="kpi-profit" icon={Wallet} label="Profit" value={currency(stats.profit)} sub={`Expenses: ${currency(stats.expenses)}`} />
-        <KpiCard testId="kpi-outstanding" icon={AlertTriangle} label="Outstanding" value={currency(stats.outstanding)} sub="Unpaid invoices" />
-        <KpiCard testId="kpi-pipeline" icon={Layers} label="Pipeline Value" value={currency(stats.pipeline_value)} sub={`${stats.total_leads} leads`} />
+        <KpiCard testId="kpi-revenue" icon={DollarSign} label="Revenue" value={formatMoney(stats.revenue)} sub="Total paid to date" />
+        <KpiCard testId="kpi-mrr" icon={TrendingUp} label="MRR" value={formatMoney(stats.mrr)} sub="Monthly recurring" />
+        <KpiCard testId="kpi-arr" icon={TrendingUp} label="ARR" value={formatMoney(stats.arr)} sub="Annualized" />
+        <KpiCard testId="kpi-profit" icon={Wallet} label="Profit" value={formatMoney(stats.profit)} sub={`Expenses: ${formatMoney(stats.expenses)}`} />
+        <KpiCard testId="kpi-outstanding" icon={AlertTriangle} label="Outstanding" value={formatMoney(stats.outstanding)} sub="Unpaid invoices" />
+        <KpiCard testId="kpi-pipeline" icon={Layers} label="Pipeline Value" value={formatMoney(stats.pipeline_value)} sub={`${stats.total_leads} leads`} />
         <KpiCard testId="kpi-conversion" icon={Percent} label="Lead Conversion" value={`${stats.conversion_rate}%`} sub="Won vs closed" />
-        <KpiCard testId="kpi-avg-deal" icon={Target} label="Avg Deal Size" value={currency(stats.avg_deal_size)} sub="Per won deal" />
+        <KpiCard testId="kpi-avg-deal" icon={Target} label="Avg Deal Size" value={formatMoney(stats.avg_deal_size)} sub="Per won deal" />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">

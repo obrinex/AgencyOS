@@ -4,6 +4,7 @@ import { ArrowLeft, Send, CreditCard, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import { INVOICE_STATUS_CONFIG } from "@/lib/statusConfig";
+import { formatMoney } from "@/lib/currency";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -88,6 +89,9 @@ export default function InvoiceDetail() {
             <p className="font-mono text-lg font-bold">{invoice.invoice_number}</p>
             <p className="text-xs text-graphite mt-1">Issued {format(new Date(invoice.issue_date), "MMM d, yyyy")}</p>
             <p className="text-xs text-graphite">Due {format(new Date(invoice.due_date), "MMM d, yyyy")}</p>
+            {invoice.currency && invoice.currency !== "INR" && (
+              <p className="text-xs font-mono text-graphite mt-1">Currency: {invoice.currency} · Rate: 1 {invoice.currency} = ₹{invoice.conversion_rate}</p>
+            )}
           </div>
           <StatusBadge config={INVOICE_STATUS_CONFIG} value={invoice.status} testId="invoice-status-badge" />
         </div>
@@ -103,15 +107,15 @@ export default function InvoiceDetail() {
           {invoice.line_items.map((li, i) => (
             <div key={i} className="flex items-center justify-between text-sm">
               <span>{li.description} <span className="text-graphite">× {li.quantity}</span></span>
-              <span className="font-mono">${(li.quantity * li.price).toLocaleString()}</span>
+              <span className="font-mono">{formatMoney(li.quantity * li.price, invoice.currency)}</span>
             </div>
           ))}
         </div>
 
         <div className="space-y-1.5 pt-4 border-t border-white/10">
-          <div className="flex justify-between text-sm text-graphite"><span>Subtotal</span><span className="font-mono">${invoice.subtotal.toLocaleString()}</span></div>
-          <div className="flex justify-between text-sm text-graphite"><span>Tax</span><span className="font-mono">${(invoice.tax || 0).toLocaleString()}</span></div>
-          <div className="flex justify-between text-lg font-bold pt-1"><span>Total</span><span className="font-mono">${invoice.total.toLocaleString()}</span></div>
+          <div className="flex justify-between text-sm text-graphite"><span>Subtotal</span><span className="font-mono">{formatMoney(invoice.subtotal, invoice.currency)}</span></div>
+          <div className="flex justify-between text-sm text-graphite"><span>Tax</span><span className="font-mono">{formatMoney(invoice.tax || 0, invoice.currency)}</span></div>
+          <div className="flex justify-between text-lg font-bold pt-1"><span>Total</span><span className="font-mono">{formatMoney(invoice.total, invoice.currency)}</span></div>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2">

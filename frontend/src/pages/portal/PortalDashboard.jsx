@@ -5,6 +5,7 @@ import api from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PROJECT_STATUS_CONFIG } from "@/lib/statusConfig";
+import { formatMoney } from "@/lib/currency";
 import StatusBadge from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -27,7 +28,7 @@ export default function PortalDashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4 bg-surface-1 border-white/10" data-testid="portal-kpi-active-projects"><p className="text-[10px] font-mono uppercase text-graphite">Active Projects</p><p className="font-display text-xl font-bold">{data.active_projects_count}</p></Card>
-        <Card className="p-4 bg-surface-1 border-white/10" data-testid="portal-kpi-outstanding"><p className="text-[10px] font-mono uppercase text-graphite">Outstanding</p><p className="font-display text-xl font-bold text-warning">${data.outstanding_amount.toLocaleString()}</p></Card>
+        <Card className="p-4 bg-surface-1 border-white/10" data-testid="portal-kpi-outstanding"><p className="text-[10px] font-mono uppercase text-graphite">Outstanding</p><p className="font-display text-xl font-bold text-warning">{formatMoney(data.outstanding_amount)}</p></Card>
         <Card className="p-4 bg-surface-1 border-white/10" data-testid="portal-kpi-open-tickets"><p className="text-[10px] font-mono uppercase text-graphite">Open Tickets</p><p className="font-display text-xl font-bold">{data.open_tickets_count}</p></Card>
         <Card className="p-4 bg-surface-1 border-white/10" data-testid="portal-kpi-total-projects"><p className="text-[10px] font-mono uppercase text-graphite">Total Projects</p><p className="font-display text-xl font-bold">{data.projects_count}</p></Card>
       </div>

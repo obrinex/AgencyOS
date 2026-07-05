@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from database import db, serialize_doc, serialize_list, to_object_id, next_counter
 from auth_utils import get_current_user, require_staff, log_audit
 from email_service import send_invoice_email
+from finance_utils import to_base, SUPPORTED_CURRENCIES, EXPENSE_TYPES
 
 from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
 
@@ -29,7 +30,7 @@ class InvoiceCreate(BaseModel):
     due_date: Optional[str] = None
     is_recurring: Optional[bool] = False
     recurrence_interval: Optional[str] = None
-    currency: Optional[str] = "USD"
+    currency: Optional[str] = "INR"
     conversion_rate: Optional[float] = 1.0
 
 
@@ -49,7 +50,7 @@ class ExpenseCreate(BaseModel):
     date: str
     vendor: Optional[str] = None
     recurring: Optional[bool] = False
-    currency: Optional[str] = "USD"
+    currency: Optional[str] = "INR"
     conversion_rate: Optional[float] = 1.0
     expense_type: Optional[str] = "unclassified"
 
@@ -73,6 +74,8 @@ async def list_invoices(client_id: Optional[str] = None, status: Optional[str] =
 
 @router.post("/invoices")
 async def create_invoice(payload: InvoiceCreate, user: dict = Depends(require_staff)):
+    if payload.currency and payload.currency not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=400, detail=f"Currency must be one of {SUPPORTED_CURRENCIES}")
     now = datetime.now(timezone.utc).isoformat()
     line_items = [li.model_dump() for li in payload.line_items]
     subtotal, total = _calc_totals(line_items, payload.tax)
@@ -85,6 +88,8 @@ async def create_invoice(payload: InvoiceCreate, user: dict = Depends(require_st
         "subtotal": subtotal,
         "tax": payload.tax or 0,
         "total": total,
+        "currency": payload.currency or "INR",
+        "conversion_rate": payload.conversion_rate or 1.0,
         "status": "draft",
         "is_recurring": payload.is_recurring,
         "recurrence_interval": payload.recurrence_interval,
@@ -124,6 +129,12 @@ async def update_invoice(invoice_id: str, payload: InvoiceUpdate, user: dict = D
         updates.update({"line_items": line_items, "subtotal": subtotal, "total": total, "tax": tax})
     if payload.due_date is not None:
         updates["due_date"] = payload.due_date
+    if payload.currency is not None:
+        if payload.currency not in SUPPORTED_CURRENCIES:
+            raise HTTPException(status_code=400, detail=f"Currency must be one of {SUPPORTED_CURRENCIES}")
+        updates["currency"] = payload.currency
+    if payload.conversion_rate is not None:
+        updates["conversion_rate"] = payload.conversion_rate
     if payload.status is not None:
         if payload.status not in INVOICE_STATUSES:
             raise HTTPException(status_code=400, detail="Invalid status")
@@ -245,6 +256,10 @@ async def list_expenses(user: dict = Depends(get_current_user)):
 
 @router.post("/expenses")
 async def create_expense(payload: ExpenseCreate, user: dict = Depends(require_staff)):
+    if payload.currency and payload.currency not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=400, detail=f"Currency must be one of {SUPPORTED_CURRENCIES}")
+    if payload.expense_type and payload.expense_type not in EXPENSE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Expense type must be one of {EXPENSE_TYPES}")
     doc = payload.model_dump()
     doc["created_at"] = datetime.now(timezone.utc).isoformat()
     res = await db.expenses.insert_one(doc)
@@ -264,12 +279,12 @@ async def finance_summary(user: dict = Depends(get_current_user)):
     expenses = await db.expenses.find({}).to_list(5000)
     leads = await db.leads.find({}).to_list(5000)
 
-    revenue = sum(i["total"] for i in invoices if i["status"] == "paid")
-    outstanding = sum(i["total"] for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
-    total_expenses = sum(e["amount"] for e in expenses)
+    revenue = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] == "paid")
+    outstanding = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
+    total_expenses = sum(to_base(e["amount"], e.get("conversion_rate")) for e in expenses)
     profit = revenue - total_expenses
     recurring_invoices = [i for i in invoices if i.get("is_recurring")]
-    mrr = sum(i["total"] for i in recurring_invoices if i["status"] == "paid")
+    mrr = sum(to_base(i["total"], i.get("conversion_rate")) for i in recurring_invoices if i["status"] == "paid")
     arr = mrr * 12
 
     active_leads = [ld for ld in leads if ld["stage"] not in ("won", "lost", "rejected")]
@@ -283,12 +298,20 @@ async def finance_summary(user: dict = Depends(get_current_user)):
     for i in invoices:
         if i["status"] == "paid" and i.get("paid_at"):
             month = i["paid_at"][:7]
-            monthly[month] = monthly.get(month, 0) + i["total"]
+            monthly[month] = monthly.get(month, 0) + to_base(i["total"], i.get("conversion_rate"))
     revenue_by_month = [{"month": k, "revenue": v} for k, v in sorted(monthly.items())]
+
+    expense_breakdown = {t: 0 for t in EXPENSE_TYPES}
+    for e in expenses:
+        etype = e.get("expense_type") or "unclassified"
+        if etype not in expense_breakdown:
+            expense_breakdown[etype] = 0
+        expense_breakdown[etype] += to_base(e["amount"], e.get("conversion_rate"))
 
     return {
         "revenue": revenue, "outstanding": outstanding, "expenses": total_expenses,
         "profit": profit, "mrr": mrr, "arr": arr, "gross_margin": round((profit / revenue) * 100, 1) if revenue else 0,
         "pipeline_value": pipeline_value, "conversion_rate": conversion_rate, "avg_deal_size": avg_deal_size,
         "revenue_by_month": revenue_by_month,
+        "expense_breakdown": expense_breakdown,
     }

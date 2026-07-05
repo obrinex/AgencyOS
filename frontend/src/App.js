@@ -30,6 +30,8 @@ import Files from "@/pages/Files";
 import Automations from "@/pages/Automations";
 import Analytics from "@/pages/Analytics";
 import Settings from "@/pages/Settings";
+import Notes from "@/pages/Notes";
+import Help from "@/pages/Help";
 
 import PortalDashboard from "@/pages/portal/PortalDashboard";
 import PortalProjects from "@/pages/portal/PortalProjects";
@@ -81,6 +83,8 @@ function App() {
               <Route path="/automations" element={<Automations />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/notes" element={<Notes />} />
+              <Route path="/help" element={<Help />} />
             </Route>
 
             <Route

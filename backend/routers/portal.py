@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from database import db, serialize_doc, serialize_list, to_object_id
 from auth_utils import require_client, log_audit
+from finance_utils import to_base
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
@@ -41,7 +42,7 @@ async def portal_overview(user: dict = Depends(require_client)):
     projects = await db.projects.find({"client_id": client_id}).to_list(200)
     invoices = await db.invoices.find({"client_id": client_id}).to_list(200)
     tickets = await db.tickets.find({"client_id": client_id}).to_list(200)
-    outstanding = sum(i["total"] for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
+    outstanding = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
     active_projects = [p for p in projects if p["status"] not in ("completed", "archived")]
     open_tickets = [t for t in tickets if t["status"] not in ("resolved", "closed")]
     return {

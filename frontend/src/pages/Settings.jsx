@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
@@ -93,7 +94,13 @@ export default function Settings() {
         <TabsContent value="company" className="mt-4 max-w-md space-y-3">
           <div className="space-y-1"><Label>Company Name</Label><Input data-testid="settings-company-name" value={company.company_name || ""} onChange={(e) => setCompany({ ...company, company_name: e.target.value })} className="bg-surface-1 border-white/10" /></div>
           <div className="space-y-1"><Label>Custom Domain</Label><Input data-testid="settings-custom-domain" value={company.custom_domain || ""} onChange={(e) => setCompany({ ...company, custom_domain: e.target.value })} placeholder="app.youragency.com" className="bg-surface-1 border-white/10" /></div>
-          <div className="space-y-1"><Label>Currency</Label><Input data-testid="settings-currency" value={company.currency || "USD"} onChange={(e) => setCompany({ ...company, currency: e.target.value })} className="bg-surface-1 border-white/10" /></div>
+          <div className="space-y-1"><Label>Currency</Label>
+            <Select value={company.currency || "INR"} onValueChange={(v) => setCompany({ ...company, currency: v })}>
+              <SelectTrigger data-testid="settings-currency" className="bg-surface-1 border-white/10"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="INR">INR (₹) — Base Currency</SelectItem><SelectItem value="USD">USD ($)</SelectItem></SelectContent>
+            </Select>
+            <p className="text-xs text-graphite mt-1">All finance totals across the app are aggregated in this base currency. Individual invoices/expenses can still be recorded in a different currency with a custom conversion rate.</p>
+          </div>
           <Button data-testid="save-company-settings-btn" onClick={saveCompany} size="sm">Save Changes</Button>
         </TabsContent>
 

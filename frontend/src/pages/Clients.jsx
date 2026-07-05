@@ -7,6 +7,7 @@ import EmptyState from "@/components/EmptyState";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { formatMoney } from "@/lib/currency";
 
 export default function Clients() {
   const [clients, setClients] = useState(null);
@@ -48,11 +49,11 @@ export default function Clients() {
               <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
                 <div>
                   <p className="text-graphite">Revenue</p>
-                  <p className="font-mono font-semibold text-success">${(c.revenue_generated || 0).toLocaleString()}</p>
+                  <p className="font-mono font-semibold text-success">{formatMoney(c.revenue_generated)}</p>
                 </div>
                 <div>
                   <p className="text-graphite">Outstanding</p>
-                  <p className="font-mono font-semibold text-warning">${(c.outstanding_amount || 0).toLocaleString()}</p>
+                  <p className="font-mono font-semibold text-warning">{formatMoney(c.outstanding_amount)}</p>
                 </div>
               </div>
               <p className="mt-3 text-[11px] font-mono text-carbon">{c.projects_count || 0} project(s)</p>

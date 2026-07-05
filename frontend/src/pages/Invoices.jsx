@@ -6,6 +6,7 @@ import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import StatusBadge from "@/components/StatusBadge";
 import { INVOICE_STATUS_CONFIG } from "@/lib/statusConfig";
+import { formatMoney } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
-const emptyForm = { client_id: "", description: "Services rendered", quantity: 1, price: "" };
+const emptyForm = { client_id: "", description: "Services rendered", quantity: 1, price: "", currency: "INR", conversion_rate: 1 };
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState(null);
@@ -42,6 +43,8 @@ export default function Invoices() {
       await api.post("/invoices", {
         client_id: form.client_id,
         line_items: [{ description: form.description, quantity: parseFloat(form.quantity), price: parseFloat(form.price) }],
+        currency: form.currency,
+        conversion_rate: parseFloat(form.conversion_rate) || 1,
       });
       toast.success("Invoice created");
       setOpen(false);
@@ -73,7 +76,7 @@ export default function Invoices() {
           {invoices.map((inv) => (
             <div key={inv.id} onClick={() => navigate(`/invoices/${inv.id}`)} data-testid={`invoice-row-${inv.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-surface-1 px-4 py-3 cursor-pointer hover:border-white/25">
               <span className="font-mono text-sm">{inv.invoice_number}</span>
-              <span className="font-mono text-sm flex-1">${inv.total.toLocaleString()}</span>
+              <span className="font-mono text-sm flex-1">{formatMoney(inv.total, inv.currency)}</span>
               <StatusBadge config={INVOICE_STATUS_CONFIG} value={inv.status} />
               <button data-testid={`delete-invoice-${inv.id}`} onClick={(e) => { e.stopPropagation(); remove(inv.id); }} className="text-graphite hover:text-danger"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
@@ -95,7 +98,18 @@ export default function Invoices() {
             <div className="space-y-1"><Label>Line Item Description</Label><Input data-testid="invoice-form-description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="bg-surface-2 border-white/10" /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label>Quantity</Label><Input data-testid="invoice-form-quantity" type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="bg-surface-2 border-white/10" /></div>
-              <div className="space-y-1"><Label>Price ($) *</Label><Input data-testid="invoice-form-price" type="number" required value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+              <div className="space-y-1"><Label>Price *</Label><Input data-testid="invoice-form-price" type="number" required value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+              <div className="space-y-1">
+                <Label>Currency</Label>
+                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, conversion_rate: v === "INR" ? 1 : form.conversion_rate })}>
+                  <SelectTrigger data-testid="invoice-form-currency" className="bg-surface-2 border-white/10"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="INR">INR (₹)</SelectItem><SelectItem value="USD">USD ($)</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Conversion Rate (to ₹)</Label>
+                <Input data-testid="invoice-form-conversion-rate" type="number" step="0.01" disabled={form.currency === "INR"} value={form.conversion_rate} onChange={(e) => setForm({ ...form, conversion_rate: e.target.value })} className="bg-surface-2 border-white/10" />
+              </div>
             </div>
             <DialogFooter><Button type="submit" data-testid="invoice-form-submit">Create Invoice</Button></DialogFooter>
           </form>

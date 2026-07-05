@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PROJECT_STATUS_CONFIG } from "@/lib/statusConfig";
+import { formatMoney } from "@/lib/currency";
 
 const PIE_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#85858C", "#B5B5BC"];
 const tooltipStyle = { background: "#18181A", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 };
@@ -44,7 +45,7 @@ export default function Analytics() {
         <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Deals Won</p><p className="font-display text-xl font-bold text-success">{wonCount}</p></Card>
         <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Deals Lost</p><p className="font-display text-xl font-bold text-danger">{lostCount}</p></Card>
         <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Total Clients</p><p className="font-display text-xl font-bold">{data.clients.length}</p></Card>
-        <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Avg Project Value</p><p className="font-display text-xl font-bold">${data.finance.avg_deal_size?.toLocaleString() || 0}</p></Card>
+        <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Avg Project Value</p><p className="font-display text-xl font-bold">{formatMoney(data.finance.avg_deal_size)}</p></Card>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">

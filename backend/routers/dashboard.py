@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 
 from database import db, serialize_doc, serialize_list
 from auth_utils import get_current_user
+from finance_utils import to_base
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -18,11 +19,11 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
     tasks = await db.tasks.find({}).to_list(2000)
     meetings = await db.meetings.find({}).to_list(500)
 
-    revenue = sum(i["total"] for i in invoices if i["status"] == "paid")
-    outstanding = sum(i["total"] for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
-    total_expenses = sum(e["amount"] for e in expenses)
+    revenue = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] == "paid")
+    outstanding = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
+    total_expenses = sum(to_base(e["amount"], e.get("conversion_rate")) for e in expenses)
     profit = revenue - total_expenses
-    mrr = sum(i["total"] for i in invoices if i.get("is_recurring") and i["status"] == "paid")
+    mrr = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i.get("is_recurring") and i["status"] == "paid")
     arr = mrr * 12
 
     active_leads = [ld for ld in leads if ld["stage"] not in ("won", "lost", "rejected")]

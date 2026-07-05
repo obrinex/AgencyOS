@@ -4,6 +4,7 @@ import { ArrowLeft, Building2, CheckCircle2, Circle, KeyRound, Copy } from "luci
 import api, { formatApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import { INVOICE_STATUS_CONFIG, PROJECT_STATUS_CONFIG, TICKET_STATUS_CONFIG } from "@/lib/statusConfig";
+import { formatMoney } from "@/lib/currency";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,9 +70,9 @@ export default function ClientDetail() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Revenue</p><p className="font-display text-xl font-bold text-success">${(client.revenue_generated || 0).toLocaleString()}</p></Card>
-        <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Outstanding</p><p className="font-display text-xl font-bold text-warning">${(client.outstanding_amount || 0).toLocaleString()}</p></Card>
-        <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">LTV</p><p className="font-display text-xl font-bold">${(client.ltv || 0).toLocaleString()}</p></Card>
+        <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Revenue</p><p className="font-display text-xl font-bold text-success">{formatMoney(client.revenue_generated)}</p></Card>
+        <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Outstanding</p><p className="font-display text-xl font-bold text-warning">{formatMoney(client.outstanding_amount)}</p></Card>
+        <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">LTV</p><p className="font-display text-xl font-bold">{formatMoney(client.ltv)}</p></Card>
         <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Health Score</p><p className="font-display text-xl font-bold">{client.health_score ?? 100}</p></Card>
       </div>
 
@@ -109,7 +110,7 @@ export default function ClientDetail() {
           {client.invoices?.map((inv) => (
             <div key={inv.id} onClick={() => navigate(`/invoices/${inv.id}`)} className="flex items-center justify-between rounded-lg border border-white/10 bg-surface-1 px-3 py-2.5 cursor-pointer hover:border-white/20">
               <span className="text-sm font-mono">{inv.invoice_number}</span>
-              <span className="text-sm font-mono">${inv.total.toLocaleString()}</span>
+              <span className="text-sm font-mono">{formatMoney(inv.total, inv.currency)}</span>
               <StatusBadge config={INVOICE_STATUS_CONFIG} value={inv.status} />
             </div>
           ))}

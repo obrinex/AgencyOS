@@ -27,5 +27,5 @@ async def seed_company_settings():
     if not existing:
         await db.company_settings.insert_one({
             "key": "main", "company_name": "Obrinex", "logo_url": None,
-            "custom_domain": None, "currency": "USD",
+            "custom_domain": None, "currency": "INR",
         })

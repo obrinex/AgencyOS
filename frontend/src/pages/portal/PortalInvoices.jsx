@@ -6,6 +6,7 @@ import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import StatusBadge from "@/components/StatusBadge";
 import { INVOICE_STATUS_CONFIG } from "@/lib/statusConfig";
+import { formatMoney } from "@/lib/currency";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -29,7 +30,7 @@ export default function PortalInvoices() {
           {invoices.map((inv) => (
             <Card key={inv.id} onClick={() => navigate(`/portal/invoices/${inv.id}`)} data-testid={`portal-invoice-row-${inv.id}`} className="p-4 bg-surface-1 border-white/10 cursor-pointer hover:border-white/25 flex items-center justify-between">
               <span className="font-mono text-sm">{inv.invoice_number}</span>
-              <span className="font-mono text-sm">${inv.total.toLocaleString()}</span>
+              <span className="font-mono text-sm">{formatMoney(inv.total, inv.currency)}</span>
               <StatusBadge config={INVOICE_STATUS_CONFIG} value={inv.status} />
             </Card>
           ))}

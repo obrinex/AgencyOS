@@ -12,7 +12,7 @@ import os
 from database import db, client, create_indexes
 from seed import seed_admin, seed_company_settings
 
-from routers import auth, crm, clients, portal, projects, finance, documents, support, knowledge, vault, files, notifications, dashboard, search, ai, settings, meetings, automations, public
+from routers import auth, crm, clients, portal, projects, finance, documents, support, knowledge, vault, files, notifications, dashboard, search, ai, settings, meetings, automations, public, notes
 
 app = FastAPI(title="AgencyOS API")
 
@@ -44,6 +44,7 @@ app.include_router(settings.router)
 app.include_router(meetings.router)
 app.include_router(automations.router)
 app.include_router(public.router)
+app.include_router(notes.router)
 
 app.add_middleware(
     CORSMiddleware,
