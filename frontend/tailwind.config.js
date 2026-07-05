@@ -52,7 +52,24 @@ module.exports = {
           '3': 'hsl(var(--chart-3))',
           '4': 'hsl(var(--chart-4))',
           '5': 'hsl(var(--chart-5))'
-        }
+        },
+        success: 'hsl(var(--success))',
+        warning: 'hsl(var(--warning))',
+        danger: 'hsl(var(--danger))',
+        info: 'hsl(var(--info))',
+        surface: {
+          1: 'hsl(var(--surface-1))',
+          2: 'hsl(var(--surface-2))',
+          3: 'hsl(var(--surface-3))'
+        },
+        carbon: 'hsl(var(--carbon))',
+        graphite: 'hsl(var(--graphite))',
+        ash: 'hsl(var(--ash))'
+      },
+      fontFamily: {
+        display: ['Archivo', 'sans-serif'],
+        sans: ['Archivo', 'sans-serif'],
+        mono: ['"Space Mono"', 'monospace']
       },
       keyframes: {
         'accordion-down': {
@@ -70,11 +87,21 @@ module.exports = {
           to: {
             height: '0'
           }
+        },
+        'fade-in': {
+          from: { opacity: '0', transform: 'translateY(4px)' },
+          to: { opacity: '1', transform: 'translateY(0)' }
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '-1000px 0' },
+          '100%': { backgroundPosition: '1000px 0' }
         }
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
-        'accordion-up': 'accordion-up 0.2s ease-out'
+        'accordion-up': 'accordion-up 0.2s ease-out',
+        'fade-in': 'fade-in 0.3s ease-out',
+        shimmer: 'shimmer 2s infinite linear'
       }
     }
   },

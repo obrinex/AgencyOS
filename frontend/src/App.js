@@ -1,53 +1,106 @@
-import { useEffect } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { Toaster } from "@/components/ui/sonner";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import AppLayout from "@/components/layout/AppLayout";
+import PortalLayout from "@/components/layout/PortalLayout";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import Login from "@/pages/Login";
+import Dashboard from "@/pages/Dashboard";
+import CRMPipeline from "@/pages/crm/CRMPipeline";
+import LeadDetail from "@/pages/crm/LeadDetail";
+import Contacts from "@/pages/Contacts";
+import Clients from "@/pages/Clients";
+import ClientDetail from "@/pages/ClientDetail";
+import Projects from "@/pages/Projects";
+import ProjectDetail from "@/pages/ProjectDetail";
+import Tasks from "@/pages/Tasks";
+import Finance from "@/pages/Finance";
+import Invoices from "@/pages/Invoices";
+import InvoiceDetail from "@/pages/InvoiceDetail";
+import Proposals from "@/pages/Proposals";
+import ProposalDetail from "@/pages/ProposalDetail";
+import Contracts from "@/pages/Contracts";
+import Support from "@/pages/Support";
+import TicketDetail from "@/pages/TicketDetail";
+import KnowledgeBase from "@/pages/KnowledgeBase";
+import Vault from "@/pages/Vault";
+import Files from "@/pages/Files";
+import Automations from "@/pages/Automations";
+import Analytics from "@/pages/Analytics";
+import Settings from "@/pages/Settings";
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
+import PortalDashboard from "@/pages/portal/PortalDashboard";
+import PortalProjects from "@/pages/portal/PortalProjects";
+import PortalProjectDetail from "@/pages/portal/PortalProjectDetail";
+import PortalInvoices from "@/pages/portal/PortalInvoices";
+import PortalContracts from "@/pages/portal/PortalContracts";
+import PortalFiles from "@/pages/portal/PortalFiles";
+import PortalSupport from "@/pages/portal/PortalSupport";
+import PortalTicketDetail from "@/pages/portal/PortalTicketDetail";
 
 function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+
+            <Route
+              element={
+                <ProtectedRoute roles={["admin", "team_member"]}>
+                  <AppLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/crm" element={<CRMPipeline />} />
+              <Route path="/crm/:id" element={<LeadDetail />} />
+              <Route path="/contacts" element={<Contacts />} />
+              <Route path="/clients" element={<Clients />} />
+              <Route path="/clients/:id" element={<ClientDetail />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/projects/:id" element={<ProjectDetail />} />
+              <Route path="/tasks" element={<Tasks />} />
+              <Route path="/finance" element={<Finance />} />
+              <Route path="/invoices" element={<Invoices />} />
+              <Route path="/invoices/:id" element={<InvoiceDetail />} />
+              <Route path="/proposals" element={<Proposals />} />
+              <Route path="/proposals/:id" element={<ProposalDetail />} />
+              <Route path="/contracts" element={<Contracts />} />
+              <Route path="/support" element={<Support />} />
+              <Route path="/support/:id" element={<TicketDetail />} />
+              <Route path="/knowledge-base" element={<KnowledgeBase />} />
+              <Route path="/vault" element={<Vault />} />
+              <Route path="/files" element={<Files />} />
+              <Route path="/automations" element={<Automations />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/settings" element={<Settings />} />
+            </Route>
+
+            <Route
+              path="/portal"
+              element={
+                <ProtectedRoute roles={["client"]}>
+                  <PortalLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<PortalDashboard />} />
+              <Route path="projects" element={<PortalProjects />} />
+              <Route path="projects/:id" element={<PortalProjectDetail />} />
+              <Route path="invoices" element={<PortalInvoices />} />
+              <Route path="invoices/:id" element={<InvoiceDetail />} />
+              <Route path="contracts" element={<PortalContracts />} />
+              <Route path="files" element={<PortalFiles />} />
+              <Route path="support" element={<PortalSupport />} />
+              <Route path="support/:id" element={<PortalTicketDetail />} />
+            </Route>
+          </Routes>
+          <Toaster />
+        </AuthProvider>
       </BrowserRouter>
     </div>
   );
