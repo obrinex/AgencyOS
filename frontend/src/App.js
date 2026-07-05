@@ -1,5 +1,5 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -46,6 +46,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+            <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
 
             <Route
@@ -98,6 +99,8 @@ function App() {
               <Route path="support" element={<PortalSupport />} />
               <Route path="support/:id" element={<PortalTicketDetail />} />
             </Route>
+
+            <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
           <Toaster />
         </AuthProvider>
