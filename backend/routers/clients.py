@@ -85,8 +85,23 @@ async def update_client(client_id: str, payload: ClientUpdate, user: dict = Depe
 
 @router.delete("/{client_id}")
 async def delete_client(client_id: str, user: dict = Depends(require_admin)):
+    client = await db.clients.find_one({"_id": to_object_id(client_id)})
+    if client and client.get("portal_user_id"):
+        await db.users.delete_one({"_id": to_object_id(client["portal_user_id"])})
     await db.clients.delete_one({"_id": to_object_id(client_id)})
     return {"message": "Client deleted"}
+
+
+@router.delete("/{client_id}/portal-user")
+async def delete_portal_user(client_id: str, user: dict = Depends(require_admin)):
+    client = await db.clients.find_one({"_id": to_object_id(client_id)})
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    if client.get("portal_user_id"):
+        await db.users.delete_one({"_id": to_object_id(client["portal_user_id"])})
+        await db.clients.update_one({"_id": client["_id"]}, {"$set": {"portal_user_id": None}})
+    await log_audit(user["id"], "revoke_portal_access", "client", client_id)
+    return {"message": "Portal access revoked"}
 
 
 @router.patch("/{client_id}/checklist")

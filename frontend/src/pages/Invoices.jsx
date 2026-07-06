@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Receipt, Trash2 } from "lucide-react";
-import api, { formatApiError } from "@/lib/api";
+import { Plus, Receipt, Trash2, FileDown } from "lucide-react";
+import api, { formatApiError, downloadFile } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import StatusBadge from "@/components/StatusBadge";
@@ -60,6 +60,15 @@ export default function Invoices() {
     load();
   };
 
+  const downloadPdf = async (e, inv) => {
+    e.stopPropagation();
+    try {
+      await downloadFile(`/invoices/${inv.id}/pdf`, `${inv.invoice_number}.pdf`);
+    } catch (err) {
+      toast.error("Failed to download PDF");
+    }
+  };
+
   if (!invoices) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
 
   return (
@@ -78,6 +87,7 @@ export default function Invoices() {
               <span className="font-mono text-sm">{inv.invoice_number}</span>
               <span className="font-mono text-sm flex-1">{formatMoney(inv.total, inv.currency)}</span>
               <StatusBadge config={INVOICE_STATUS_CONFIG} value={inv.status} />
+              <button data-testid={`download-invoice-pdf-${inv.id}`} onClick={(e) => downloadPdf(e, inv)} className="text-graphite hover:text-foreground"><FileDown className="h-3.5 w-3.5" /></button>
               <button data-testid={`delete-invoice-${inv.id}`} onClick={(e) => { e.stopPropagation(); remove(inv.id); }} className="text-graphite hover:text-danger"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
           ))}

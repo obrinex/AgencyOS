@@ -32,6 +32,7 @@ import Analytics from "@/pages/Analytics";
 import Settings from "@/pages/Settings";
 import Notes from "@/pages/Notes";
 import Help from "@/pages/Help";
+import Meetings from "@/pages/Meetings";
 
 import PortalDashboard from "@/pages/portal/PortalDashboard";
 import PortalProjects from "@/pages/portal/PortalProjects";
@@ -85,6 +86,7 @@ function App() {
               <Route path="/settings" element={<Settings />} />
               <Route path="/notes" element={<Notes />} />
               <Route path="/help" element={<Help />} />
+              <Route path="/meetings" element={<Meetings />} />
             </Route>
 
             <Route

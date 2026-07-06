@@ -2,7 +2,12 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import io as _io
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
 from database import db, serialize_doc, serialize_list, to_object_id, next_counter
 from auth_utils import get_current_user, require_staff, log_audit
@@ -186,9 +191,10 @@ async def create_checkout(invoice_id: str, request: Request, user: dict = Depend
     success_url = f"{origin}/invoices/{invoice_id}?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/invoices/{invoice_id}"
 
+    invoice_currency = (invoice.get("currency") or "INR").lower()
     stripe_checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url=f"{origin}/api/webhook/stripe")
     checkout_request = CheckoutSessionRequest(
-        amount=float(invoice["total"]), currency="usd",
+        amount=float(invoice["total"]), currency=invoice_currency,
         success_url=success_url, cancel_url=cancel_url,
         metadata={"invoice_id": invoice_id, "invoice_number": invoice["invoice_number"]},
     )
@@ -198,7 +204,7 @@ async def create_checkout(invoice_id: str, request: Request, user: dict = Depend
         "session_id": session.session_id,
         "invoice_id": invoice_id,
         "amount": invoice["total"],
-        "currency": "usd",
+        "currency": invoice_currency,
         "payment_status": "initiated",
         "metadata": {"invoice_id": invoice_id},
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -315,3 +321,129 @@ async def finance_summary(user: dict = Depends(get_current_user)):
         "revenue_by_month": revenue_by_month,
         "expense_breakdown": expense_breakdown,
     }
+
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+async def invoice_pdf(invoice_id: str, user: dict = Depends(get_current_user)):
+    invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if user["role"] == "client" and invoice["client_id"] != user.get("client_id"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    client = await db.clients.find_one({"_id": to_object_id(invoice["client_id"])})
+
+    symbol = "\u20b9" if (invoice.get("currency") or "INR") == "INR" else "$"
+    buf = _io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    y = height - 25 * mm
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(20 * mm, y, "INVOICE")
+    c.setFont("Helvetica", 10)
+    y -= 10 * mm
+    c.drawString(20 * mm, y, f"Invoice #: {invoice['invoice_number']}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Issue Date: {invoice['issue_date'][:10]}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Due Date: {invoice['due_date'][:10]}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Status: {invoice['status'].upper()}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Currency: {invoice.get('currency', 'INR')}")
+
+    if client:
+        y -= 12 * mm
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(20 * mm, y, "Billed To:")
+        c.setFont("Helvetica", 10)
+        y -= 6 * mm
+        c.drawString(20 * mm, y, client.get("company_name", ""))
+
+    y -= 14 * mm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(20 * mm, y, "Description")
+    c.drawString(115 * mm, y, "Qty")
+    c.drawString(140 * mm, y, "Price")
+    c.drawString(168 * mm, y, "Amount")
+    y -= 3 * mm
+    c.line(20 * mm, y, 190 * mm, y)
+    c.setFont("Helvetica", 10)
+    for li in invoice["line_items"]:
+        y -= 7 * mm
+        c.drawString(20 * mm, y, str(li["description"])[:55])
+        c.drawString(115 * mm, y, str(li["quantity"]))
+        c.drawString(140 * mm, y, f"{symbol}{li['price']:,.2f}")
+        c.drawString(168 * mm, y, f"{symbol}{li['quantity'] * li['price']:,.2f}")
+
+    y -= 9 * mm
+    c.line(115 * mm, y, 190 * mm, y)
+    y -= 7 * mm
+    c.drawString(140 * mm, y, "Subtotal:")
+    c.drawString(168 * mm, y, f"{symbol}{invoice['subtotal']:,.2f}")
+    y -= 6 * mm
+    c.drawString(140 * mm, y, "Tax:")
+    c.drawString(168 * mm, y, f"{symbol}{invoice.get('tax', 0):,.2f}")
+    y -= 7 * mm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(140 * mm, y, "Total:")
+    c.drawString(168 * mm, y, f"{symbol}{invoice['total']:,.2f}")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={invoice['invoice_number']}.pdf"},
+    )
+
+
+@router.get("/finance/report/pdf")
+async def finance_report_pdf(user: dict = Depends(require_staff)):
+    summary = await finance_summary(user=user)
+
+    buf = _io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    height = A4[1]
+    y = height - 25 * mm
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(20 * mm, y, "Finance Report")
+    c.setFont("Helvetica", 9)
+    y -= 8 * mm
+    c.drawString(20 * mm, y, f"Generated: {datetime.now(timezone.utc).strftime('%b %d, %Y')} \u00b7 Base currency: INR")
+
+    rows = [
+        ("Revenue", summary["revenue"]), ("Outstanding", summary["outstanding"]),
+        ("Expenses", summary["expenses"]), ("Profit", summary["profit"]),
+        ("MRR", summary["mrr"]), ("ARR", summary["arr"]),
+        ("Gross Margin", f"{summary['gross_margin']}%"), ("Pipeline Value", summary["pipeline_value"]),
+        ("Avg Deal Size", summary["avg_deal_size"]),
+    ]
+    y -= 14 * mm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(20 * mm, y, "Key Metrics")
+    c.setFont("Helvetica", 10)
+    for label, value in rows:
+        y -= 7 * mm
+        display = f"\u20b9{value:,.2f}" if isinstance(value, (int, float)) else str(value)
+        c.drawString(20 * mm, y, label)
+        c.drawString(90 * mm, y, display)
+
+    y -= 12 * mm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(20 * mm, y, "Expense Breakdown")
+    c.setFont("Helvetica", 10)
+    for etype, amount in summary["expense_breakdown"].items():
+        y -= 7 * mm
+        c.drawString(20 * mm, y, etype.replace("_", " ").title())
+        c.drawString(90 * mm, y, f"\u20b9{amount:,.2f}")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=finance_report.pdf"},
+    )

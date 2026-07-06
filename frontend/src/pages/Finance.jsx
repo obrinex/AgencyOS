@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from "recharts";
-import { Plus, Trash2, Wallet, PiggyBank } from "lucide-react";
-import api, { formatApiError } from "@/lib/api";
+import { Plus, Trash2, Wallet, PiggyBank, FileDown } from "lucide-react";
+import api, { formatApiError, downloadFile } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,14 @@ export default function Finance() {
     load();
   };
 
+  const downloadReport = async () => {
+    try {
+      await downloadFile("/finance/report/pdf", "finance_report.pdf");
+    } catch (e) {
+      toast.error("Failed to download report");
+    }
+  };
+
   if (!summary) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
 
   const breakdownData = Object.entries(summary.expense_breakdown || {})
@@ -64,7 +72,11 @@ export default function Finance() {
 
   return (
     <div className="p-6 space-y-6" data-testid="finance-page">
-      <PageHeader title="Finance" description="Revenue, expenses & profitability overview (base currency: INR)" />
+      <PageHeader
+        title="Finance"
+        description="Revenue, expenses & profitability overview (base currency: INR)"
+        actions={<Button data-testid="download-finance-report-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={downloadReport}><FileDown className="h-3.5 w-3.5" /> Download Report</Button>}
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Revenue</p><p data-testid="finance-kpi-revenue" className="font-display text-xl font-bold text-success">{formatMoney(summary.revenue)}</p></Card>

@@ -49,6 +49,8 @@ async def create_indexes():
     await db.invoices.create_index("client_id")
     await db.notifications.create_index("user_id")
     await db.notes.create_index("user_id")
+    await db.google_oauth_states.create_index("expires_at", expireAfterSeconds=0)
+    await db.meetings.create_index("google_event_id")
     await db.audit_logs.create_index("created_at")
     await db.counters.create_index("name", unique=True)
 

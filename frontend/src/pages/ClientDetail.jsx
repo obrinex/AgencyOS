@@ -46,6 +46,12 @@ export default function ClientDetail() {
     }
   };
 
+  const revokePortalAccess = async () => {
+    await api.delete(`/clients/${id}/portal-user`);
+    toast.success("Portal access revoked");
+    load();
+  };
+
   if (!client) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
 
   return (
@@ -65,6 +71,11 @@ export default function ClientDetail() {
         {!client.portal_user_id && (
           <Button data-testid="create-portal-user-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={() => setPortalOpen(true)}>
             <KeyRound className="h-3.5 w-3.5" /> Create Portal Access
+          </Button>
+        )}
+        {client.portal_user_id && (
+          <Button data-testid="revoke-portal-user-btn" size="sm" variant="outline" className="gap-1.5 border-white/10 text-danger hover:text-danger" onClick={revokePortalAccess}>
+            <KeyRound className="h-3.5 w-3.5" /> Revoke Portal Access
           </Button>
         )}
       </div>

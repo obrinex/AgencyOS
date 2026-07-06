@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Plus, KanbanSquare, Building2, DollarSign } from "lucide-react";
+import { Plus, KanbanSquare, Building2, DollarSign, Upload } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
@@ -24,6 +24,9 @@ export default function CRMPipeline() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [dragStage, setDragStage] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [importing, setImporting] = useState(false);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
@@ -81,6 +84,26 @@ export default function CRMPipeline() {
     }
   };
 
+  const importCsv = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const { data } = await api.post("/leads/import-csv", formData, { headers: { "Content-Type": "multipart/form-data" } });
+      setImportResult(data);
+      toast.success(`Imported ${data.imported} lead(s)`);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
   if (!leads) {
     return (
       <div className="p-6 space-y-4" data-testid="pipeline-loading">
@@ -98,9 +121,14 @@ export default function CRMPipeline() {
         title="Pipeline"
         description={`${leads.length} total leads across the funnel`}
         actions={
-          <Button data-testid="open-create-lead-btn" onClick={() => setOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> New Lead
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button data-testid="open-import-csv-btn" onClick={() => { setImportOpen(true); setImportResult(null); }} size="sm" variant="outline" className="gap-1.5 border-white/10">
+              <Upload className="h-3.5 w-3.5" /> Import CSV
+            </Button>
+            <Button data-testid="open-create-lead-btn" onClick={() => setOpen(true)} size="sm" className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> New Lead
+            </Button>
+          </div>
         }
       />
 
@@ -188,6 +216,37 @@ export default function CRMPipeline() {
               <Button type="submit" data-testid="lead-form-submit" disabled={saving}>{saving ? "Creating..." : "Create Lead"}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="bg-surface-1 border-white/10" data-testid="import-csv-dialog">
+          <DialogHeader><DialogTitle>Import Leads from CSV</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-graphite">
+              CSV must include a <code className="font-mono">company</code> column. Optional columns: website,
+              industry, employees, revenue, location, source, priority, email, phone, linkedin, notes, stage.
+            </p>
+            <Input
+              data-testid="import-csv-file-input"
+              type="file"
+              accept=".csv"
+              disabled={importing}
+              onChange={importCsv}
+              className="bg-surface-2 border-white/10"
+            />
+            {importResult && (
+              <div data-testid="import-csv-result" className="text-sm space-y-1 rounded-lg bg-surface-2 border border-white/10 p-3">
+                <p className="text-success">Imported: {importResult.imported}</p>
+                {importResult.errors?.length > 0 && (
+                  <div className="text-danger">
+                    <p>Errors:</p>
+                    <ul className="list-disc pl-5 text-xs">{importResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

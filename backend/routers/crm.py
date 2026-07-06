@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 from typing import Optional, List
+import csv
+import io
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, UploadFile, File
 from pydantic import BaseModel
 
 from database import db, serialize_doc, serialize_list, to_object_id
@@ -98,6 +100,57 @@ async def create_lead(payload: LeadCreate, user: dict = Depends(require_staff)):
     await log_audit(user["id"], "create_lead", "lead", str(res.inserted_id))
     lead = await db.leads.find_one({"_id": res.inserted_id})
     return serialize_doc(lead)
+
+
+@router.post("/leads/import-csv")
+async def import_leads_csv(file: UploadFile = File(...), user: dict = Depends(require_staff)):
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded CSV")
+    reader = csv.DictReader(io.StringIO(text))
+    if reader.fieldnames is None or "company" not in [f.strip().lower() for f in reader.fieldnames]:
+        raise HTTPException(status_code=400, detail="CSV must include a 'company' column")
+
+    now = datetime.now(timezone.utc).isoformat()
+    imported = 0
+    errors = []
+    for i, raw_row in enumerate(reader, start=2):
+        row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw_row.items()}
+        company = row.get("company", "")
+        if not company:
+            errors.append(f"Row {i}: missing company name")
+            continue
+        try:
+            doc = {
+                "company": company,
+                "website": row.get("website") or None,
+                "industry": row.get("industry") or None,
+                "employees": int(row["employees"]) if row.get("employees") else None,
+                "revenue": float(row["revenue"]) if row.get("revenue") else None,
+                "location": row.get("location") or None,
+                "owner_id": user["id"],
+                "source": row.get("source") or "csv_import",
+                "priority": row.get("priority") or "medium",
+                "email": row.get("email") or None,
+                "phone": row.get("phone") or None,
+                "linkedin": row.get("linkedin") or None,
+                "notes": row.get("notes") or None,
+                "tags": [],
+                "stage": row.get("stage") if row.get("stage") in STAGES else "prospect",
+                "custom_fields": {},
+                "score": 0, "created_at": now, "updated_at": now, "converted_client_id": None,
+            }
+        except ValueError as e:
+            errors.append(f"Row {i}: invalid number format ({e})")
+            continue
+        res = await db.leads.insert_one(doc)
+        await db.lead_activities.insert_one({"lead_id": str(res.inserted_id), "type": "note", "content": "Lead imported via CSV", "created_by": user["id"], "created_at": now})
+        imported += 1
+
+    await log_audit(user["id"], "import_leads_csv", "lead", None)
+    return {"imported": imported, "errors": errors}
 
 
 @router.get("/leads/{lead_id}")

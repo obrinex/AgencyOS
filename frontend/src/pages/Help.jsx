@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   LayoutDashboard, KanbanSquare, Users, FileText, Building2, FolderKanban, CheckSquare,
   LifeBuoy, DollarSign, Receipt, FileSignature, BookOpen, Lock, FolderOpen, StickyNote,
-  Zap, BarChart3, Settings as SettingsIcon, HelpCircle, Search,
+  Zap, BarChart3, Settings as SettingsIcon, HelpCircle, Search, CalendarDays,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,7 @@ const HELP_SECTIONS = [
         steps: [
           "Drag a lead card between stage columns to update its status — dropping into 'Won' auto-creates a Client, onboarding Project, default tasks and a draft Invoice.",
           "Click a lead card to open its detail page: log notes, view the activity timeline, and edit deal value.",
-          "New leads can be added manually or captured automatically via the `/api/webhooks/lead-capture` endpoint.",
+          "New leads can be added manually, via 'Import CSV' (needs a 'company' column; website/industry/revenue/etc. are optional), or captured automatically via the `/api/webhooks/lead-capture` endpoint.",
         ],
       },
       {
@@ -95,6 +95,16 @@ const HELP_SECTIONS = [
           "Update ticket status (open/pending/resolved/closed) as you work through requests.",
         ],
       },
+      {
+        icon: CalendarDays, title: "Meetings",
+        description: "Schedule meetings and optionally two-way sync with Google Calendar.",
+        steps: [
+          "Click 'Connect' under Google Calendar to link your Google account (needs Calendar API credentials set up by an admin).",
+          "Once connected, any meeting you create here is pushed to your primary Google Calendar automatically, and deleting it here removes the Google event too.",
+          "Click 'Sync Now' to pull existing events from your Google Calendar into AgencyOS.",
+          "'New Meeting' works even without Google connected — it just stays internal to AgencyOS.",
+        ],
+      },
     ],
   },
   {
@@ -108,6 +118,7 @@ const HELP_SECTIONS = [
           "Click 'Add Expense' to log a cost — choose a Currency (INR or USD). If you pick USD, enter a Conversion Rate (how many ₹ per $1) so the amount is correctly converted into base currency for your totals.",
           "Every expense also needs a Type: Personal Withdrawal (money you took out personally), Business Expense (a real cost of running the agency), or Unclassified (sort it later).",
           "The Expense Breakdown pie chart groups all spending by type so you can see how much is personal vs. business at a glance.",
+          "Click 'Download Report' to export a PDF summary of all key finance metrics and the expense breakdown.",
         ],
       },
       {
@@ -116,7 +127,8 @@ const HELP_SECTIONS = [
         steps: [
           "New Invoice lets you pick a Currency and Conversion Rate the same way as Expenses — the invoice total is stored in its own currency, but rolls up into your base-currency reports automatically.",
           "Use 'Send to Client' to email the invoice (via Resend) — it also becomes visible in the Client Portal.",
-          "'Pay Now' starts a Stripe Checkout session; status updates automatically once payment completes.",
+          "'Pay Now' starts a Stripe Checkout session (charged in the invoice's own currency) — status updates automatically once payment completes.",
+          "Click the download icon on any invoice row (or 'Download PDF' on the invoice detail page) to export it as a PDF.",
         ],
       },
       {

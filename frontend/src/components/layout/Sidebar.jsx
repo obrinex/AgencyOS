@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, KanbanSquare, Users, Building2, FolderKanban, CheckSquare,
   DollarSign, Receipt, FileText, FileSignature, LifeBuoy, BookOpen, Lock,
-  FolderOpen, Zap, BarChart3, Settings, ChevronsLeft, ChevronsRight, StickyNote, HelpCircle,
+  FolderOpen, Zap, BarChart3, Settings, ChevronsLeft, ChevronsRight, StickyNote, HelpCircle, CalendarDays,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,7 @@ const NAV_SECTIONS = [
       { to: "/projects", label: "Projects", icon: FolderKanban, testId: "nav-projects" },
       { to: "/tasks", label: "Tasks", icon: CheckSquare, testId: "nav-tasks" },
       { to: "/support", label: "Support Desk", icon: LifeBuoy, testId: "nav-support" },
+      { to: "/meetings", label: "Meetings", icon: CalendarDays, testId: "nav-meetings" },
     ],
   },
   {

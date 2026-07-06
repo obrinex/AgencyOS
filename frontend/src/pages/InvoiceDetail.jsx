@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Send, CreditCard, Loader2 } from "lucide-react";
-import api from "@/lib/api";
+import { ArrowLeft, Send, CreditCard, Loader2, FileDown } from "lucide-react";
+import api, { downloadFile } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import { INVOICE_STATUS_CONFIG } from "@/lib/statusConfig";
 import { formatMoney } from "@/lib/currency";
@@ -75,6 +75,14 @@ export default function InvoiceDetail() {
     load();
   };
 
+  const downloadPdf = async () => {
+    try {
+      await downloadFile(`/invoices/${id}/pdf`, `${invoice.invoice_number}.pdf`);
+    } catch (e) {
+      toast.error("Failed to download PDF");
+    }
+  };
+
   if (!invoice) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
 
   return (
@@ -119,6 +127,7 @@ export default function InvoiceDetail() {
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
+          <Button data-testid="download-invoice-pdf-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={downloadPdf}><FileDown className="h-3.5 w-3.5" /> Download PDF</Button>
           {user.role !== "client" && invoice.status === "draft" && (
             <Button data-testid="send-invoice-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={sendInvoice}><Send className="h-3.5 w-3.5" /> Send to Client</Button>
           )}
