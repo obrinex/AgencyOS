@@ -6,14 +6,14 @@ import { Sparkles, Send, Loader2, Bot, User as UserIcon } from "lucide-react";
 import { API } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
-const SUGGESTIONS = [
+const DEFAULT_SUGGESTIONS = [
   "Summarize this week's pipeline activity",
   "Which deals are most likely to close?",
   "Draft a follow-up email for a stalled lead",
   "What's our current outstanding revenue?",
 ];
 
-export default function AIAssistant({ open, onOpenChange }) {
+export default function AIAssistant({ open, onOpenChange, initialPrompt, initialPromptKey, mode = "general", suggestions = DEFAULT_SUGGESTIONS }) {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -23,6 +23,13 @@ export default function AIAssistant({ open, onOpenChange }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (open && initialPrompt && !loading) {
+      send(initialPrompt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPromptKey, open]);
 
   const send = async (text) => {
     const msg = text ?? input;
@@ -35,7 +42,7 @@ export default function AIAssistant({ open, onOpenChange }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ message: msg, session_id: "default" }),
+        body: JSON.stringify({ message: msg, session_id: mode, mode }),
       });
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -74,7 +81,7 @@ export default function AIAssistant({ open, onOpenChange }) {
       <SheetContent data-testid="ai-assistant-panel" className="w-full sm:max-w-md flex flex-col p-0 bg-surface-1 border-white/10">
         <SheetHeader className="p-4 border-b border-white/10">
           <SheetTitle className="flex items-center gap-2 font-display">
-            <Sparkles className="h-4 w-4" /> AI Assistant
+            <Sparkles className="h-4 w-4" /> {mode === "guide" ? "Dashboard Guide AI" : "AI Assistant"}
           </SheetTitle>
         </SheetHeader>
 
@@ -85,10 +92,12 @@ export default function AIAssistant({ open, onOpenChange }) {
                 <Bot className="h-5 w-5 text-graphite" />
               </div>
               <p className="text-sm text-graphite max-w-xs">
-                Ask me to summarize meetings, draft emails, write proposals, analyze sales, or answer questions about your agency data.
+                {mode === "guide"
+                  ? "Ask me how to use AgencyOS, where to find a feature, or what a dashboard metric means."
+                  : "Ask me to summarize meetings, draft emails, write proposals, analyze sales, or answer questions about your agency data."}
               </p>
               <div className="grid gap-2 w-full">
-                {SUGGESTIONS.map((s) => (
+                {suggestions.map((s) => (
                   <button
                     key={s}
                     data-testid={`ai-suggestion-${s.slice(0, 10).replace(/\s+/g, "-").toLowerCase()}`}

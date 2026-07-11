@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Plus, FileSignature } from "lucide-react";
-import api, { formatApiError } from "@/lib/api";
+import { Plus, FileSignature, FileDown, Link2 } from "lucide-react";
+import api, { formatApiError, downloadFile } from "@/lib/api";
+import { Textarea } from "@/components/ui/textarea";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,10 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 
 const STATUS_COLORS = { draft: "text-graphite", sent: "text-info", signed: "text-success", expired: "text-danger" };
-const emptyForm = { title: "", client_id: "", start_date: "", end_date: "", renewal_date: "" };
+const emptyForm = {
+  title: "", client_id: "", start_date: "", end_date: "", renewal_date: "",
+  scope: "", payment_terms: "", amount: "", agency_signatory: "", client_signatory: "", extra_clauses: "",
+};
 
 export default function Contracts() {
   const [contracts, setContracts] = useState(null);
@@ -38,10 +42,30 @@ export default function Contracts() {
     e.preventDefault();
     if (!form.client_id) { toast.error("Select a client"); return; }
     try {
-      await api.post("/contracts", form);
-      toast.success("Contract created");
+      const payload = { ...form, amount: form.amount ? parseFloat(form.amount) : null };
+      await api.post("/contracts", payload);
+      toast.success("Agreement created — you can download the PDF from its card");
       setOpen(false);
       setForm(emptyForm);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const downloadPdf = async (c) => {
+    try {
+      await downloadFile(`/contracts/${c.id}/pdf`, `${c.title.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/ /g, "_") || "agreement"}.pdf`);
+    } catch (err) {
+      toast.error("Failed to download PDF");
+    }
+  };
+
+  const copySignLink = async (c) => {
+    try {
+      const { data } = await api.post(`/contracts/${c.id}/share`);
+      await navigator.clipboard.writeText(`${window.location.origin}/agreement/${data.share_token}`);
+      toast.success("Sign link copied — send it to your client");
       load();
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
@@ -96,16 +120,34 @@ export default function Contracts() {
               {c.status === "signed" && c.signature_name && (
                 <p className="mt-2 flex items-center gap-1.5 text-xs text-success"><CheckCircle2 className="h-3.5 w-3.5" /> Signed by {c.signature_name}</p>
               )}
+              <div className="mt-3 flex items-center gap-2">
+                <Button
+                  data-testid={`download-contract-pdf-${c.id}`}
+                  size="sm" variant="outline" className="gap-1.5 border-white/10 h-7 text-xs"
+                  onClick={() => downloadPdf(c)}
+                >
+                  <FileDown className="h-3 w-3" /> Download PDF
+                </Button>
+                {c.status !== "signed" && (
+                  <Button
+                    data-testid={`copy-sign-link-${c.id}`}
+                    size="sm" variant="outline" className="gap-1.5 border-white/10 h-7 text-xs"
+                    onClick={() => copySignLink(c)}
+                  >
+                    <Link2 className="h-3 w-3" /> Copy Sign Link
+                  </Button>
+                )}
+              </div>
             </Card>
           ))}
         </div>
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-surface-1 border-white/10" data-testid="create-contract-dialog">
-          <DialogHeader><DialogTitle>New Contract</DialogTitle></DialogHeader>
+        <DialogContent className="bg-surface-1 border-white/10 max-h-[85vh] overflow-y-auto" data-testid="create-contract-dialog">
+          <DialogHeader><DialogTitle>Generate Agreement</DialogTitle></DialogHeader>
           <form onSubmit={create} className="space-y-3">
-            <div className="space-y-1"><Label>Title *</Label><Input data-testid="contract-form-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+            <div className="space-y-1"><Label>Title *</Label><Input data-testid="contract-form-title" required placeholder="e.g. AI Automation Services Agreement" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="bg-surface-2 border-white/10" /></div>
             <div className="space-y-1">
               <Label>Client *</Label>
               <Select value={form.client_id} onValueChange={(v) => setForm({ ...form, client_id: v })}>
@@ -113,11 +155,22 @@ export default function Contracts() {
                 <SelectContent>{clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
+            <div className="space-y-1"><Label>Scope of Work</Label><Textarea data-testid="contract-form-scope" placeholder="Describe the services you'll deliver (one point per line)" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} className="bg-surface-2 border-white/10" rows={4} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1"><Label>Contract Value (INR)</Label><Input data-testid="contract-form-amount" type="number" step="0.01" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+              <div className="space-y-1"><Label>Payment Terms</Label><Input data-testid="contract-form-payment" placeholder="e.g. 50% upfront, 50% on delivery" value={form.payment_terms} onChange={(e) => setForm({ ...form, payment_terms: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label>Start Date</Label><DatePicker testId="contract-form-start" value={form.start_date} onChange={(v) => setForm({ ...form, start_date: v })} /></div>
-              <div className="space-y-1"><Label>Renewal Date</Label><DatePicker testId="contract-form-renewal" value={form.renewal_date} onChange={(v) => setForm({ ...form, renewal_date: v })} /></div>
+              <div className="space-y-1"><Label>End Date</Label><DatePicker testId="contract-form-end" value={form.end_date} onChange={(v) => setForm({ ...form, end_date: v })} /></div>
             </div>
-            <DialogFooter><Button type="submit" data-testid="contract-form-submit">Create Contract</Button></DialogFooter>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1"><Label>Your Signatory</Label><Input data-testid="contract-form-agency-sig" placeholder="Who signs for you" value={form.agency_signatory} onChange={(e) => setForm({ ...form, agency_signatory: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+              <div className="space-y-1"><Label>Client Signatory</Label><Input data-testid="contract-form-client-sig" placeholder="Who signs for the client" value={form.client_signatory} onChange={(e) => setForm({ ...form, client_signatory: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+            </div>
+            <div className="space-y-1"><Label>Additional Clauses (optional)</Label><Textarea data-testid="contract-form-clauses" placeholder="Any custom terms, one per line" value={form.extra_clauses} onChange={(e) => setForm({ ...form, extra_clauses: e.target.value })} className="bg-surface-2 border-white/10" rows={3} /></div>
+            <p className="text-xs text-graphite">Standard clauses (confidentiality, IP, termination, liability, governing law) are included automatically in the PDF.</p>
+            <DialogFooter><Button type="submit" data-testid="contract-form-submit">Generate Agreement</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

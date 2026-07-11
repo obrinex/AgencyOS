@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends
 
 from database import db, serialize_doc, serialize_list
-from auth_utils import get_current_user
+from auth_utils import require_staff
 from finance_utils import to_base
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -11,7 +11,7 @@ STAGES_ORDER = ["prospect", "contacted", "qualified", "discovery", "meeting_sche
 
 
 @router.get("/stats")
-async def dashboard_stats(user: dict = Depends(get_current_user)):
+async def dashboard_stats(user: dict = Depends(require_staff)):
     invoices = await db.invoices.find({}).to_list(5000)
     expenses = await db.expenses.find({}).to_list(5000)
     leads = await db.leads.find({}).to_list(5000)
@@ -57,6 +57,6 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
 
 
 @router.get("/activity")
-async def recent_activity(limit: int = 20, user: dict = Depends(get_current_user)):
+async def recent_activity(limit: int = 20, user: dict = Depends(require_staff)):
     activities = await db.lead_activities.find({}).sort("created_at", -1).to_list(limit)
     return serialize_list(activities)

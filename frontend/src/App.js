@@ -32,7 +32,12 @@ import Analytics from "@/pages/Analytics";
 import Settings from "@/pages/Settings";
 import Notes from "@/pages/Notes";
 import Help from "@/pages/Help";
-import Meetings from "@/pages/Meetings";
+import Calendar from "@/pages/Calendar";
+import BookMeeting from "@/pages/BookMeeting";
+import PublicAgreement from "@/pages/PublicAgreement";
+import LeadCapture from "@/pages/LeadCapture";
+import PublicProject from "@/pages/PublicProject";
+import LeadFinder from "@/pages/LeadFinder";
 
 import PortalDashboard from "@/pages/portal/PortalDashboard";
 import PortalProjects from "@/pages/portal/PortalProjects";
@@ -53,6 +58,10 @@ function App() {
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/proposal/:token" element={<PublicProposal />} />
+            <Route path="/book/:slug" element={<BookMeeting />} />
+            <Route path="/agreement/:token" element={<PublicAgreement />} />
+            <Route path="/start/:slug" element={<LeadCapture />} />
+            <Route path="/status/:token" element={<PublicProject />} />
 
             <Route
               element={
@@ -63,6 +72,7 @@ function App() {
             >
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/crm" element={<CRMPipeline />} />
+              <Route path="/lead-finder" element={<LeadFinder />} />
               <Route path="/crm/:id" element={<LeadDetail />} />
               <Route path="/contacts" element={<Contacts />} />
               <Route path="/clients" element={<Clients />} />
@@ -86,7 +96,8 @@ function App() {
               <Route path="/settings" element={<Settings />} />
               <Route path="/notes" element={<Notes />} />
               <Route path="/help" element={<Help />} />
-              <Route path="/meetings" element={<Meetings />} />
+              <Route path="/calendar" element={<Calendar />} />
+              <Route path="/meetings" element={<Navigate to="/calendar" replace />} />
             </Route>
 
             <Route

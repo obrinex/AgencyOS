@@ -43,9 +43,17 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
+# Set COOKIE_SECURE=false when serving over plain HTTP (e.g. LAN preview);
+# browsers reject Secure cookies on non-HTTPS origins other than localhost.
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() != "false"
+COOKIE_SAMESITE = os.environ.get("COOKIE_SAMESITE", "lax").lower()
+if COOKIE_SAMESITE not in {"lax", "strict", "none"}:
+    raise RuntimeError("COOKIE_SAMESITE must be lax, strict, or none")
+
+
 def set_auth_cookies(response, access_token: str, refresh_token: str):
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="lax", max_age=900, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE, max_age=900, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE, max_age=604800, path="/")
 
 
 def clear_auth_cookies(response):
@@ -69,7 +77,11 @@ async def get_current_user(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    user = await db.users.find_one({"_id": to_object_id(payload["sub"])})
+    try:
+        user_id = to_object_id(payload["sub"])
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = await db.users.find_one({"_id": user_id})
     if not user or not user.get("is_active", True):
         raise HTTPException(status_code=401, detail="User not found")
     user = serialize_doc(user)

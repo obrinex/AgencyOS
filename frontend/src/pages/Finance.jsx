@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from "recharts";
-import { Plus, Trash2, Wallet, PiggyBank, FileDown } from "lucide-react";
+import { Plus, Trash2, Wallet, PiggyBank, FileDown, Target, Pencil } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import api, { formatApiError, downloadFile } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
@@ -29,11 +30,26 @@ export default function Finance() {
   const [expenses, setExpenses] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [goal, setGoal] = useState(null);
+  const [goalEdit, setGoalEdit] = useState(false);
+  const [goalInput, setGoalInput] = useState("");
 
   const load = async () => {
-    const [s, e] = await Promise.all([api.get("/finance/summary"), api.get("/expenses")]);
+    const [s, e, g] = await Promise.all([api.get("/finance/summary"), api.get("/expenses"), api.get("/finance/goal")]);
     setSummary(s.data);
     setExpenses(e.data);
+    setGoal(g.data);
+  };
+
+  const saveGoal = async () => {
+    try {
+      const { data } = await api.put("/finance/goal", { monthly_revenue_goal: parseFloat(goalInput) || 0 });
+      setGoal(data);
+      setGoalEdit(false);
+      toast.success("Revenue goal updated");
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -77,6 +93,38 @@ export default function Finance() {
         description="Revenue, expenses & profitability overview (base currency: INR)"
         actions={<Button data-testid="download-finance-report-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={downloadReport}><FileDown className="h-3.5 w-3.5" /> Download Report</Button>}
       />
+
+      {goal && (
+        <Card className="p-5 bg-surface-1 border-white/10" data-testid="revenue-goal-card">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <p className="font-display text-sm font-semibold flex items-center gap-2"><Target className="h-4 w-4" /> Monthly Revenue Goal</p>
+            {goalEdit ? (
+              <div className="flex items-center gap-2">
+                <Input data-testid="goal-input" type="number" min="0" value={goalInput} onChange={(e) => setGoalInput(e.target.value)} placeholder="e.g. 500000" className="bg-surface-2 border-white/10 h-8 w-36" />
+                <Button data-testid="goal-save" size="sm" className="h-8" onClick={saveGoal}>Save</Button>
+              </div>
+            ) : (
+              <button data-testid="goal-edit-btn" onClick={() => { setGoalInput(String(goal.monthly_revenue_goal || "")); setGoalEdit(true); }} className="flex items-center gap-1 text-xs text-graphite hover:text-foreground">
+                <Pencil className="h-3 w-3" /> {goal.monthly_revenue_goal ? "Edit goal" : "Set a goal"}
+              </button>
+            )}
+          </div>
+          {goal.monthly_revenue_goal ? (
+            <>
+              <div className="flex items-end justify-between mb-2">
+                <p className="font-display text-2xl font-bold">{formatMoney(goal.mtd_revenue)} <span className="text-sm font-normal text-graphite">of {formatMoney(goal.monthly_revenue_goal)}</span></p>
+                <p className={`text-sm font-mono font-semibold ${goal.on_track ? "text-success" : "text-warning"}`}>{goal.on_track ? "ON TRACK" : "BEHIND PACE"}</p>
+              </div>
+              <Progress value={Math.min(goal.progress_pct || 0, 100)} className="h-2 mb-2" />
+              <p className="text-xs text-graphite">
+                Day {goal.day_of_month} of {goal.days_in_month} · projected month-end: <span className="text-foreground font-mono">{formatMoney(goal.projected_month_end)}</span> · pipeline behind it: {formatMoney(goal.pipeline_value)}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-graphite">Set a monthly target and this card will track your pace against it — paid revenue, month-end projection, and the pipeline value that could close the gap.</p>
+          )}
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Revenue</p><p data-testid="finance-kpi-revenue" className="font-display text-xl font-bold text-success">{formatMoney(summary.revenue)}</p></Card>
@@ -159,11 +207,11 @@ export default function Finance() {
                 <Label>Currency</Label>
                 <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, conversion_rate: v === "INR" ? 1 : form.conversion_rate })}>
                   <SelectTrigger data-testid="expense-form-currency" className="bg-surface-2 border-white/10"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="INR">INR (₹)</SelectItem><SelectItem value="USD">USD ($)</SelectItem></SelectContent>
+                  <SelectContent><SelectItem value="INR">INR</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Conversion Rate (to ₹)</Label>
+                <Label>Conversion Rate (to INR)</Label>
                 <Input data-testid="expense-form-conversion-rate" type="number" step="0.01" disabled={form.currency === "INR"} value={form.conversion_rate} onChange={(e) => setForm({ ...form, conversion_rate: e.target.value })} className="bg-surface-2 border-white/10" />
               </div>
               <div className="space-y-1">

@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, KanbanSquare, Users, Building2, FolderKanban, CheckSquare,
   DollarSign, Receipt, FileText, FileSignature, LifeBuoy, BookOpen, Lock,
-  FolderOpen, Zap, BarChart3, Settings, ChevronsLeft, ChevronsRight, StickyNote, HelpCircle, CalendarDays,
+  FolderOpen, Zap, BarChart3, Settings, ChevronsLeft, ChevronsRight, StickyNote, HelpCircle, CalendarDays, Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ const NAV_SECTIONS = [
     label: "Sales",
     items: [
       { to: "/crm", label: "Pipeline", icon: KanbanSquare, testId: "nav-crm" },
+      { to: "/lead-finder", label: "AI Lead Finder", icon: Sparkles, testId: "nav-lead-finder" },
       { to: "/contacts", label: "Contacts", icon: Users, testId: "nav-contacts" },
       { to: "/proposals", label: "Proposals", icon: FileText, testId: "nav-proposals" },
     ],
@@ -27,7 +28,7 @@ const NAV_SECTIONS = [
       { to: "/projects", label: "Projects", icon: FolderKanban, testId: "nav-projects" },
       { to: "/tasks", label: "Tasks", icon: CheckSquare, testId: "nav-tasks" },
       { to: "/support", label: "Support Desk", icon: LifeBuoy, testId: "nav-support" },
-      { to: "/meetings", label: "Meetings", icon: CalendarDays, testId: "nav-meetings" },
+      { to: "/calendar", label: "Calendar", icon: CalendarDays, testId: "nav-calendar" },
     ],
   },
   {

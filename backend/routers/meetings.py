@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from database import db, serialize_doc, serialize_list, to_object_id
-from auth_utils import get_current_user, require_staff
+from auth_utils import require_staff
 from automation_engine import run_meeting_automation
 import google_calendar_utils as gcal
 
@@ -26,6 +26,10 @@ class MeetingCreate(BaseModel):
 
 
 class MeetingUpdate(BaseModel):
+    title: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    location: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
     ai_summary: Optional[str] = None
@@ -37,7 +41,7 @@ async def _get_google_tokens(user_id: str):
 
 
 @router.get("")
-async def list_meetings(lead_id: Optional[str] = None, client_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def list_meetings(lead_id: Optional[str] = None, client_id: Optional[str] = None, user: dict = Depends(require_staff)):
     query = {}
     if lead_id:
         query["lead_id"] = lead_id

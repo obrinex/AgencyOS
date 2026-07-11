@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Plus, KanbanSquare, Building2, DollarSign, Upload } from "lucide-react";
+import { Plus, KanbanSquare, Building2, DollarSign, Upload, Link2 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
@@ -122,6 +122,21 @@ export default function CRMPipeline() {
         description={`${leads.length} total leads across the funnel`}
         actions={
           <div className="flex items-center gap-2">
+            <Button
+              data-testid="copy-leadform-link-btn"
+              size="sm" variant="outline" className="gap-1.5 border-white/10"
+              onClick={async () => {
+                try {
+                  const { data } = await api.get("/leadform/settings");
+                  await navigator.clipboard.writeText(`${window.location.origin}/start/${data.slug}`);
+                  toast.success("Lead form link copied — put it on your website or share it");
+                } catch (err) {
+                  toast.error(formatApiError(err.response?.data?.detail));
+                }
+              }}
+            >
+              <Link2 className="h-3.5 w-3.5" /> Lead Form Link
+            </Button>
             <Button data-testid="open-import-csv-btn" onClick={() => { setImportOpen(true); setImportResult(null); }} size="sm" variant="outline" className="gap-1.5 border-white/10">
               <Upload className="h-3.5 w-3.5" /> Import CSV
             </Button>

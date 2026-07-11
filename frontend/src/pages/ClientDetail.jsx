@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, CheckCircle2, Circle, KeyRound, Copy } from "lucide-react";
+import { ArrowLeft, Building2, CheckCircle2, Circle, KeyRound, Copy, Eye, RefreshCw } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import { INVOICE_STATUS_CONFIG, PROJECT_STATUS_CONFIG, TICKET_STATUS_CONFIG } from "@/lib/statusConfig";
@@ -21,6 +21,9 @@ export default function ClientDetail() {
   const [portalOpen, setPortalOpen] = useState(false);
   const [portalForm, setPortalForm] = useState({ email: "", name: "" });
   const [creds, setCreds] = useState(null);
+  const [portalCredsOpen, setPortalCredsOpen] = useState(false);
+  const [portalCreds, setPortalCreds] = useState(null);
+  const [resettingPortalPassword, setResettingPortalPassword] = useState(false);
 
   const load = async () => {
     const { data } = await api.get(`/clients/${id}`);
@@ -52,6 +55,37 @@ export default function ClientDetail() {
     load();
   };
 
+  const viewPortalCredentials = async () => {
+    try {
+      const { data } = await api.get(`/clients/${id}/portal-user`);
+      setPortalCreds(data);
+      setPortalCredsOpen(true);
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const resetPortalPassword = async () => {
+    setResettingPortalPassword(true);
+    try {
+      const { data } = await api.post(`/clients/${id}/portal-user/reset-password`);
+      setPortalCreds(data);
+      setPortalCredsOpen(true);
+      toast.success("Client portal password reset");
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setResettingPortalPassword(false);
+    }
+  };
+
+  const copyPortalCreds = async () => {
+    if (!portalCreds) return;
+    await navigator.clipboard.writeText(`Email: ${portalCreds.email}`);
+    toast.success("Portal login email copied");
+  };
+
   if (!client) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
 
   return (
@@ -74,9 +108,17 @@ export default function ClientDetail() {
           </Button>
         )}
         {client.portal_user_id && (
-          <Button data-testid="revoke-portal-user-btn" size="sm" variant="outline" className="gap-1.5 border-white/10 text-danger hover:text-danger" onClick={revokePortalAccess}>
-            <KeyRound className="h-3.5 w-3.5" /> Revoke Portal Access
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button data-testid="view-portal-user-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={viewPortalCredentials}>
+              <Eye className="h-3.5 w-3.5" /> View Login
+            </Button>
+            <Button data-testid="reset-portal-password-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={resetPortalPassword} disabled={resettingPortalPassword}>
+              <RefreshCw className={`h-3.5 w-3.5 ${resettingPortalPassword ? "animate-spin" : ""}`} /> Reset Password
+            </Button>
+            <Button data-testid="revoke-portal-user-btn" size="sm" variant="outline" className="gap-1.5 border-white/10 text-danger hover:text-danger" onClick={revokePortalAccess}>
+              <KeyRound className="h-3.5 w-3.5" /> Revoke Portal Access
+            </Button>
+          </div>
         )}
       </div>
 
@@ -166,6 +208,9 @@ export default function ClientDetail() {
               <div className="space-y-1"><Label>Contact Name</Label><Input data-testid="portal-form-name" required value={portalForm.name} onChange={(e) => setPortalForm({ ...portalForm, name: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <div className="space-y-1"><Label>Email</Label><Input data-testid="portal-form-email" type="email" required value={portalForm.email} onChange={(e) => setPortalForm({ ...portalForm, email: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <DialogFooter><Button type="submit" data-testid="portal-form-submit">Create Access</Button></DialogFooter>
+              <div className="text-xs text-graphite text-center pt-1">
+                Note: Please check your spam folder if the email is not delivered to you.
+              </div>
             </form>
           ) : (
             <div className="space-y-3" data-testid="portal-credentials-result">
@@ -173,6 +218,31 @@ export default function ClientDetail() {
               <div className="rounded-lg bg-surface-2 border border-white/10 p-3 font-mono text-sm space-y-1">
                 <p>Email: {creds.email}</p>
                 <p>Password: {creds.temp_password}</p>
+              </div>
+              <div className="text-xs text-graphite text-center pt-1">
+                Note: Please check your spam folder if the email is not delivered to you.
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={portalCredsOpen} onOpenChange={setPortalCredsOpen}>
+        <DialogContent className="bg-surface-1 border-white/10" data-testid="portal-login-dialog">
+          <DialogHeader><DialogTitle>Client Portal Login</DialogTitle></DialogHeader>
+          {portalCreds && (
+            <div className="space-y-3">
+              <div className="rounded-lg bg-surface-2 border border-white/10 p-3 font-mono text-sm space-y-1">
+                <p>Email: {portalCreds.email}</p>
+                <p>Password: Not stored for security. Use Reset Password to email a new temporary password.</p>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" className="gap-1.5 border-white/10" onClick={copyPortalCreds}>
+                  <Copy className="h-3.5 w-3.5" /> Copy
+                </Button>
+              </DialogFooter>
+              <div className="text-xs text-graphite text-center pt-1">
+                Note: Please check your spam folder if the email is not delivered to you.
               </div>
             </div>
           )}

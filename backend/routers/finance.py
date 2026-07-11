@@ -10,15 +10,14 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
 from database import db, serialize_doc, serialize_list, to_object_id, next_counter
-from auth_utils import get_current_user, require_staff, log_audit
-from email_service import send_invoice_email
+from auth_utils import get_current_user, require_admin, require_staff, log_audit
+from email_service import send_invoice_email, send_payment_link_email
 from finance_utils import to_base, SUPPORTED_CURRENCIES, EXPENSE_TYPES
-
-from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
 
 router = APIRouter(prefix="/api", tags=["finance"])
 
-INVOICE_STATUSES = ["draft", "sent", "viewed", "paid", "partial", "overdue", "cancelled"]
+INVOICE_STATUSES = ["draft", "sent", "viewed", "pending", "paid", "partial", "overdue", "failed", "cancelled"]
+PAYMENT_RECORD_STATUSES = {"paid", "failed", "pending"}
 
 
 class LineItem(BaseModel):
@@ -48,6 +47,15 @@ class InvoiceUpdate(BaseModel):
     conversion_rate: Optional[float] = None
 
 
+class PaymentRequestSendLink(BaseModel):
+    payment_link: str
+
+
+class PaymentStatusUpdate(BaseModel):
+    status: str
+    note: Optional[str] = None
+
+
 class ExpenseCreate(BaseModel):
     category: str
     description: str
@@ -67,7 +75,7 @@ def _calc_totals(line_items: list, tax: float):
 
 
 @router.get("/invoices")
-async def list_invoices(client_id: Optional[str] = None, status: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def list_invoices(client_id: Optional[str] = None, status: Optional[str] = None, user: dict = Depends(require_staff)):
     query = {}
     if client_id:
         query["client_id"] = client_id
@@ -100,7 +108,7 @@ async def create_invoice(payload: InvoiceCreate, user: dict = Depends(require_st
         "recurrence_interval": payload.recurrence_interval,
         "issue_date": now,
         "due_date": payload.due_date or (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
-        "stripe_session_id": None,
+        "payment_link": None,
         "paid_at": None,
         "created_at": now,
         "updated_at": now,
@@ -152,6 +160,36 @@ async def update_invoice(invoice_id: str, payload: InvoiceUpdate, user: dict = D
     return serialize_doc(invoice)
 
 
+@router.post("/invoices/{invoice_id}/payment-status")
+async def record_payment_status(invoice_id: str, payload: PaymentStatusUpdate, user: dict = Depends(require_admin)):
+    """Record the finance outcome of an invoice from the admin workspace."""
+    if payload.status not in PAYMENT_RECORD_STATUSES:
+        raise HTTPException(status_code=400, detail="Payment status must be paid, failed, or pending")
+
+    invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+    updates = {
+        "status": payload.status,
+        "payment_status": payload.status,
+        "payment_note": (payload.note or "").strip() or None,
+        "payment_recorded_at": now,
+        "payment_recorded_by": user["id"],
+        "updated_at": now,
+    }
+    if payload.status == "paid":
+        updates["paid_at"] = now
+    else:
+        updates["paid_at"] = None
+
+    await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": updates})
+    await log_audit(user["id"], f"record_invoice_payment_{payload.status}", "invoice", invoice_id)
+    updated = await db.invoices.find_one({"_id": invoice["_id"]})
+    return serialize_doc(updated)
+
+
 @router.delete("/invoices/{invoice_id}")
 async def delete_invoice(invoice_id: str, user: dict = Depends(require_staff)):
     await db.invoices.delete_one({"_id": to_object_id(invoice_id)})
@@ -163,7 +201,6 @@ async def send_invoice(invoice_id: str, user: dict = Depends(require_staff)):
     invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat()}})
 
     recipient_email = None
     portal_user = await db.users.find_one({"role": "client", "client_id": invoice["client_id"]})
@@ -173,89 +210,76 @@ async def send_invoice(invoice_id: str, user: dict = Depends(require_staff)):
         contact = await db.contacts.find_one({"client_id": invoice["client_id"], "email": {"$ne": None}})
         if contact:
             recipient_email = contact.get("email")
-    if recipient_email:
-        await send_invoice_email(recipient_email, invoice["invoice_number"], invoice["total"], invoice["due_date"], invoice_id)
+
+    if not recipient_email:
+        raise HTTPException(
+            status_code=400,
+            detail="Client email not found. Please ensure the client has portal access or a contact email."
+        )
+
+    await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat()}})
+
+    await send_invoice_email(
+        recipient_email,
+        invoice["invoice_number"],
+        invoice["total"],
+        invoice["due_date"],
+        invoice_id,
+        invoice.get("currency", "INR"),
+    )
 
     updated = await db.invoices.find_one({"_id": invoice["_id"]})
     return serialize_doc(updated)
 
 
-@router.post("/invoices/{invoice_id}/checkout")
-async def create_checkout(invoice_id: str, request: Request, user: dict = Depends(get_current_user)):
+@router.post("/invoices/{invoice_id}/send-payment-link")
+async def send_invoice_payment_link(invoice_id: str, payload: PaymentRequestSendLink, user: dict = Depends(require_staff)):
+    """Admin sends a custom payment link directly to the client's email."""
+    if not payload.payment_link or not payload.payment_link.strip():
+        raise HTTPException(status_code=400, detail="Payment link is required")
+
     invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if user["role"] == "client" and invoice["client_id"] != user.get("client_id"):
-        raise HTTPException(status_code=403, detail="Not authorized")
-    origin = os.environ["FRONTEND_URL"]
-    success_url = f"{origin}/invoices/{invoice_id}?session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{origin}/invoices/{invoice_id}"
 
-    invoice_currency = (invoice.get("currency") or "INR").lower()
-    stripe_checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url=f"{origin}/api/webhook/stripe")
-    checkout_request = CheckoutSessionRequest(
-        amount=float(invoice["total"]), currency=invoice_currency,
-        success_url=success_url, cancel_url=cancel_url,
-        metadata={"invoice_id": invoice_id, "invoice_number": invoice["invoice_number"]},
-    )
-    session = await stripe_checkout.create_checkout_session(checkout_request)
-
-    await db.payment_transactions.insert_one({
-        "session_id": session.session_id,
-        "invoice_id": invoice_id,
-        "amount": invoice["total"],
-        "currency": invoice_currency,
-        "payment_status": "initiated",
-        "metadata": {"invoice_id": invoice_id},
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-    await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": {"stripe_session_id": session.session_id}})
-    return {"url": session.url, "session_id": session.session_id}
-
-
-@router.get("/invoices/checkout/status/{session_id}")
-async def checkout_status(session_id: str, request: Request, user: dict = Depends(get_current_user)):
-    tx = await db.payment_transactions.find_one({"session_id": session_id})
-    if not tx:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    if tx["payment_status"] == "paid":
-        return {"payment_status": "paid", "status": "complete"}
-
-    origin = os.environ["FRONTEND_URL"]
-    stripe_checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url=f"{origin}/api/webhook/stripe")
-    status = await stripe_checkout.get_checkout_status(session_id)
-
-    if status.payment_status == "paid" and tx["payment_status"] != "paid":
-        await db.payment_transactions.update_one({"session_id": session_id}, {"$set": {"payment_status": "paid", "status": status.status}})
-        invoice_id = tx["invoice_id"]
-        await db.invoices.update_one({"_id": to_object_id(invoice_id)}, {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc).isoformat()}})
-        invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
-        if invoice:
-            await db.clients.update_one({"_id": to_object_id(invoice["client_id"])}, {"$inc": {"revenue_generated": invoice["total"]}})
+    recipient_email = None
+    portal_user = await db.users.find_one({"role": "client", "client_id": invoice["client_id"]})
+    if portal_user:
+        recipient_email = portal_user["email"]
     else:
-        await db.payment_transactions.update_one({"session_id": session_id}, {"$set": {"payment_status": status.payment_status, "status": status.status}})
+        contact = await db.contacts.find_one({"client_id": invoice["client_id"], "email": {"$ne": None}})
+        if contact:
+            recipient_email = contact.get("email")
 
-    return {"payment_status": status.payment_status, "status": status.status}
+    if not recipient_email:
+        raise HTTPException(
+            status_code=400,
+            detail="Client email not found. Please ensure the client has portal access or a contact email."
+        )
 
+    await send_payment_link_email(
+        to_email=recipient_email,
+        invoice_number=invoice["invoice_number"],
+        total=invoice["total"],
+        payment_link=payload.payment_link.strip(),
+        currency=invoice.get("currency", "INR")
+    )
 
-@router.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    body = await request.body()
-    stripe_checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url="")
-    webhook_response = await stripe_checkout.handle_webhook(body, request.headers.get("Stripe-Signature"))
-    if webhook_response.payment_status == "paid":
-        tx = await db.payment_transactions.find_one({"session_id": webhook_response.session_id})
-        if tx and tx["payment_status"] != "paid":
-            await db.payment_transactions.update_one({"session_id": webhook_response.session_id}, {"$set": {"payment_status": "paid"}})
-            invoice_id = tx["invoice_id"]
-            await db.invoices.update_one({"_id": to_object_id(invoice_id)}, {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc).isoformat()}})
-    return {"received": True}
+    now = datetime.now(timezone.utc).isoformat()
+    await db.invoices.update_one(
+        {"_id": invoice["_id"]},
+        {"$set": {"payment_link": payload.payment_link.strip(), "status": "sent", "updated_at": now}}
+    )
+
+    await log_audit(user["id"], "send_payment_link", "invoice", invoice_id)
+    updated = await db.invoices.find_one({"_id": invoice["_id"]})
+    return serialize_doc(updated)
 
 
 # ---------------- Expenses ----------------
 
 @router.get("/expenses")
-async def list_expenses(user: dict = Depends(get_current_user)):
+async def list_expenses(user: dict = Depends(require_staff)):
     expenses = await db.expenses.find({}).sort("date", -1).to_list(1000)
     return serialize_list(expenses)
 
@@ -280,7 +304,7 @@ async def delete_expense(expense_id: str, user: dict = Depends(require_staff)):
 
 
 @router.get("/finance/summary")
-async def finance_summary(user: dict = Depends(get_current_user)):
+async def finance_summary(user: dict = Depends(require_staff)):
     invoices = await db.invoices.find({}).to_list(5000)
     expenses = await db.expenses.find({}).to_list(5000)
     leads = await db.leads.find({}).to_list(5000)
@@ -324,6 +348,45 @@ async def finance_summary(user: dict = Depends(get_current_user)):
 
 
 
+class RevenueGoalUpdate(BaseModel):
+    monthly_revenue_goal: float
+
+
+@router.get("/finance/goal")
+async def get_revenue_goal(user: dict = Depends(require_staff)):
+    settings = await db.company_settings.find_one({"key": "main"})
+    goal = (settings or {}).get("monthly_revenue_goal") or 0
+
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    invoices = await db.invoices.find({"status": "paid", "paid_at": {"$gte": month_start}}).to_list(2000)
+    mtd_revenue = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices)
+
+    day = now.day
+    days_in_month = (now.replace(month=now.month % 12 + 1, day=1) - timedelta(days=1)).day if now.month != 12 else 31
+    projected = round(mtd_revenue / day * days_in_month, 2) if day else 0
+
+    leads = await db.leads.find({"stage": {"$nin": ["won", "lost", "rejected", "cold"]}}).to_list(2000)
+    pipeline_value = sum(ld.get("revenue") or 0 for ld in leads)
+
+    return {
+        "monthly_revenue_goal": goal,
+        "mtd_revenue": mtd_revenue,
+        "projected_month_end": projected,
+        "pipeline_value": pipeline_value,
+        "progress_pct": round(mtd_revenue / goal * 100, 1) if goal else None,
+        "on_track": projected >= goal if goal else None,
+        "day_of_month": day,
+        "days_in_month": days_in_month,
+    }
+
+
+@router.put("/finance/goal")
+async def set_revenue_goal(payload: RevenueGoalUpdate, user: dict = Depends(require_staff)):
+    await db.company_settings.update_one({"key": "main"}, {"$set": {"monthly_revenue_goal": payload.monthly_revenue_goal}}, upsert=True)
+    return await get_revenue_goal(user=user)
+
+
 @router.get("/invoices/{invoice_id}/pdf")
 async def invoice_pdf(invoice_id: str, user: dict = Depends(get_current_user)):
     invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
@@ -332,36 +395,46 @@ async def invoice_pdf(invoice_id: str, user: dict = Depends(get_current_user)):
     if user["role"] == "client" and invoice["client_id"] != user.get("client_id"):
         raise HTTPException(status_code=403, detail="Not authorized")
     client = await db.clients.find_one({"_id": to_object_id(invoice["client_id"])})
+    company = await db.company_settings.find_one({"key": "main"})
+    agency_name = (company or {}).get("company_name") or "Obrinex"
 
-    symbol = "\u20b9" if (invoice.get("currency") or "INR") == "INR" else "$"
+    code = invoice.get("currency") or "INR"
     buf = _io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
     y = height - 25 * mm
 
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(20 * mm, y, "INVOICE")
+    # Branded header band
+    c.setFillColorRGB(0.05, 0.05, 0.05)
+    c.rect(0, height - 38 * mm, width, 38 * mm, stroke=0, fill=1)
+    c.setFillColorRGB(1, 1, 1)
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(20 * mm, height - 20 * mm, agency_name.upper())
+    c.setFont("Helvetica", 9)
+    c.drawString(20 * mm, height - 27 * mm, "AgencyOS \u00b7 info@obrinex.space")
+    c.setFont("Helvetica-Bold", 24)
+    c.drawRightString(190 * mm, height - 20 * mm, "INVOICE")
     c.setFont("Helvetica", 10)
-    y -= 10 * mm
-    c.drawString(20 * mm, y, f"Invoice #: {invoice['invoice_number']}")
-    y -= 6 * mm
-    c.drawString(20 * mm, y, f"Issue Date: {invoice['issue_date'][:10]}")
-    y -= 6 * mm
-    c.drawString(20 * mm, y, f"Due Date: {invoice['due_date'][:10]}")
-    y -= 6 * mm
-    c.drawString(20 * mm, y, f"Status: {invoice['status'].upper()}")
-    y -= 6 * mm
-    c.drawString(20 * mm, y, f"Currency: {invoice.get('currency', 'INR')}")
+    c.drawRightString(190 * mm, height - 27 * mm, invoice["invoice_number"])
+    c.setFillColorRGB(0, 0, 0)
 
+    y = height - 50 * mm
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(20 * mm, y, "Billed To")
+    c.drawRightString(190 * mm, y, "Details")
+    c.setFont("Helvetica", 10)
+    y -= 6 * mm
     if client:
-        y -= 12 * mm
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(20 * mm, y, "Billed To:")
-        c.setFont("Helvetica", 10)
-        y -= 6 * mm
         c.drawString(20 * mm, y, client.get("company_name", ""))
+        if client.get("location"):
+            c.drawString(20 * mm, y - 5 * mm, client["location"])
+        if client.get("website"):
+            c.drawString(20 * mm, y - 10 * mm, client["website"])
+    c.drawRightString(190 * mm, y, f"Issue Date: {invoice['issue_date'][:10]}")
+    c.drawRightString(190 * mm, y - 5 * mm, f"Due Date: {invoice['due_date'][:10]}")
+    c.drawRightString(190 * mm, y - 10 * mm, f"Status: {invoice['status'].upper()}  \u00b7  {invoice.get('currency', 'INR')}")
 
-    y -= 14 * mm
+    y -= 24 * mm
     c.setFont("Helvetica-Bold", 10)
     c.drawString(20 * mm, y, "Description")
     c.drawString(115 * mm, y, "Qty")
@@ -374,21 +447,26 @@ async def invoice_pdf(invoice_id: str, user: dict = Depends(get_current_user)):
         y -= 7 * mm
         c.drawString(20 * mm, y, str(li["description"])[:55])
         c.drawString(115 * mm, y, str(li["quantity"]))
-        c.drawString(140 * mm, y, f"{symbol}{li['price']:,.2f}")
-        c.drawString(168 * mm, y, f"{symbol}{li['quantity'] * li['price']:,.2f}")
+        c.drawString(140 * mm, y, f"{code} {li['price']:,.2f}")
+        c.drawString(168 * mm, y, f"{code} {li['quantity'] * li['price']:,.2f}")
 
     y -= 9 * mm
     c.line(115 * mm, y, 190 * mm, y)
     y -= 7 * mm
     c.drawString(140 * mm, y, "Subtotal:")
-    c.drawString(168 * mm, y, f"{symbol}{invoice['subtotal']:,.2f}")
+    c.drawString(168 * mm, y, f"{code} {invoice['subtotal']:,.2f}")
     y -= 6 * mm
     c.drawString(140 * mm, y, "Tax:")
-    c.drawString(168 * mm, y, f"{symbol}{invoice.get('tax', 0):,.2f}")
+    c.drawString(168 * mm, y, f"{code} {invoice.get('tax', 0):,.2f}")
     y -= 7 * mm
     c.setFont("Helvetica-Bold", 12)
     c.drawString(140 * mm, y, "Total:")
-    c.drawString(168 * mm, y, f"{symbol}{invoice['total']:,.2f}")
+    c.drawString(168 * mm, y, f"{code} {invoice['total']:,.2f}")
+
+    c.setFont("Helvetica", 9)
+    c.setFillColorRGB(0.4, 0.4, 0.4)
+    c.drawString(20 * mm, 20 * mm, f"Thank you for your business. Questions about this invoice? Contact {agency_name} at info@obrinex.space.")
+    c.setFillColorRGB(0, 0, 0)
 
     c.showPage()
     c.save()
@@ -427,7 +505,7 @@ async def finance_report_pdf(user: dict = Depends(require_staff)):
     c.setFont("Helvetica", 10)
     for label, value in rows:
         y -= 7 * mm
-        display = f"\u20b9{value:,.2f}" if isinstance(value, (int, float)) else str(value)
+        display = f"INR {value:,.2f}" if isinstance(value, (int, float)) else str(value)
         c.drawString(20 * mm, y, label)
         c.drawString(90 * mm, y, display)
 
@@ -438,7 +516,7 @@ async def finance_report_pdf(user: dict = Depends(require_staff)):
     for etype, amount in summary["expense_breakdown"].items():
         y -= 7 * mm
         c.drawString(20 * mm, y, etype.replace("_", " ").title())
-        c.drawString(90 * mm, y, f"\u20b9{amount:,.2f}")
+        c.drawString(90 * mm, y, f"INR {amount:,.2f}")
 
     c.showPage()
     c.save()
@@ -447,3 +525,102 @@ async def finance_report_pdf(user: dict = Depends(require_staff)):
         buf, media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=finance_report.pdf"},
     )
+
+
+# ---------------- Payment Requests ----------------
+
+@router.post("/invoices/{invoice_id}/request-payment")
+async def request_payment(invoice_id: str, user: dict = Depends(get_current_user)):
+    invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if user["role"] == "client" and invoice["client_id"] != user.get("client_id"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    existing = await db.payment_requests.find_one({
+        "invoice_id": invoice_id,
+        "status": "pending"
+    })
+    if existing:
+        return serialize_doc(existing)
+
+    client = await db.clients.find_one({"_id": to_object_id(invoice["client_id"])})
+    client_name = client.get("company_name", "Unknown Client") if client else "Unknown Client"
+
+    doc = {
+        "invoice_id": invoice_id,
+        "invoice_number": invoice["invoice_number"],
+        "client_id": invoice["client_id"],
+        "client_name": client_name,
+        "amount": invoice["total"],
+        "currency": invoice.get("currency", "INR"),
+        "status": "pending",
+        "payment_link": "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    res = await db.payment_requests.insert_one(doc)
+    await log_audit(user["id"], "request_payment", "invoice", invoice_id)
+    new_req = await db.payment_requests.find_one({"_id": res.inserted_id})
+    return serialize_doc(new_req)
+
+
+@router.get("/admin/payment-requests")
+async def list_payment_requests(user: dict = Depends(require_staff)):
+    reqs = await db.payment_requests.find({}).sort("created_at", -1).to_list(1000)
+    return serialize_list(reqs)
+
+
+@router.post("/admin/payment-requests/{request_id}/send-link")
+async def send_payment_link(request_id: str, payload: PaymentRequestSendLink, user: dict = Depends(require_staff)):
+    req = await db.payment_requests.find_one({"_id": to_object_id(request_id)})
+    if not req:
+        raise HTTPException(status_code=404, detail="Payment request not found")
+
+    invoice = await db.invoices.find_one({"_id": to_object_id(req["invoice_id"])})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    recipient_email = None
+    portal_user = await db.users.find_one({"role": "client", "client_id": req["client_id"]})
+    if portal_user:
+        recipient_email = portal_user["email"]
+    else:
+        contact = await db.contacts.find_one({"client_id": req["client_id"], "email": {"$ne": None}})
+        if contact:
+            recipient_email = contact.get("email")
+
+    if not recipient_email:
+        raise HTTPException(
+            status_code=400,
+            detail="Client email not found. Please ensure the client has portal access or a contact email."
+        )
+
+    await send_payment_link_email(
+        to_email=recipient_email,
+        invoice_number=req["invoice_number"],
+        total=req["amount"],
+        payment_link=payload.payment_link,
+        currency=req.get("currency", "INR")
+    )
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.payment_requests.update_one(
+        {"_id": req["_id"]},
+        {"$set": {"status": "sent", "payment_link": payload.payment_link, "updated_at": now}}
+    )
+
+    await db.invoices.update_one(
+        {"_id": invoice["_id"]},
+        {"$set": {
+            "payment_link": payload.payment_link,
+            "status": "sent",
+            "updated_at": now,
+        }}
+    )
+
+    await log_audit(user["id"], "send_payment_link", "payment_request", request_id)
+
+    updated = await db.payment_requests.find_one({"_id": req["_id"]})
+    return serialize_doc(updated)

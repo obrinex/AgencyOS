@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Globe, Mail, Phone, MapPin, Building2, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Globe, Mail, Phone, MapPin, Building2, Send, Trash2, Sparkles, Copy, Loader2 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import { STAGE_CONFIG, STAGES_LIST, PRIORITY_CONFIG } from "@/lib/statusConfig";
@@ -19,6 +19,20 @@ export default function LeadDetail() {
   const [lead, setLead] = useState(null);
   const [activities, setActivities] = useState([]);
   const [note, setNote] = useState("");
+  const [drafting, setDrafting] = useState(false);
+
+  const draftReply = async () => {
+    setDrafting(true);
+    try {
+      await api.post(`/ai/leads/${id}/draft-reply`);
+      toast.success("AI reply drafted");
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setDrafting(false);
+    }
+  };
 
   const load = async () => {
     const [l, a] = await Promise.all([api.get(`/leads/${id}`), api.get(`/leads/${id}/activities`)]);
@@ -98,6 +112,27 @@ export default function LeadDetail() {
           <p className="font-display text-xl font-bold">{lead.score || 0}/100</p>
         </Card>
       </div>
+
+      <Card className="p-4 bg-surface-1 border-white/10" data-testid="ai-reply-card">
+        <div className="flex items-center justify-between mb-2">
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-graphite flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> AI-Drafted Reply</p>
+          <div className="flex items-center gap-2">
+            {lead.ai_draft_reply && (
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-white/10" onClick={() => { navigator.clipboard.writeText(lead.ai_draft_reply); toast.success("Reply copied"); }}>
+                <Copy className="h-3 w-3" /> Copy
+              </Button>
+            )}
+            <Button data-testid="draft-reply-btn" size="sm" variant="outline" className="h-7 text-xs gap-1 border-white/10" onClick={draftReply} disabled={drafting}>
+              {drafting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} {lead.ai_draft_reply ? "Regenerate" : "Draft with AI"}
+            </Button>
+          </div>
+        </div>
+        {lead.ai_draft_reply ? (
+          <p className="text-sm text-ash whitespace-pre-line">{lead.ai_draft_reply}</p>
+        ) : (
+          <p className="text-xs text-graphite">No draft yet — click "Draft with AI" and the assistant will write a personalized reply based on this lead's details.</p>
+        )}
+      </Card>
 
       <Tabs defaultValue="timeline">
         <TabsList className="bg-surface-1 border border-white/10">

@@ -15,10 +15,10 @@ export default function Analytics() {
 
   useEffect(() => {
     (async () => {
-      const [leads, clients, projects, finance] = await Promise.all([
-        api.get("/leads"), api.get("/clients"), api.get("/projects"), api.get("/finance/summary"),
+      const [leads, clients, projects, finance, utilization] = await Promise.all([
+        api.get("/leads"), api.get("/clients"), api.get("/projects"), api.get("/finance/summary"), api.get("/team/utilization"),
       ]);
-      setData({ leads: leads.data, clients: clients.data, projects: projects.data, finance: finance.data });
+      setData({ leads: leads.data, clients: clients.data, projects: projects.data, finance: finance.data, utilization: utilization.data });
     })();
   }, []);
 
@@ -90,6 +90,33 @@ export default function Analytics() {
             </BarChart>
           </ResponsiveContainer>
         ) : <div className="flex h-[240px] items-center justify-center text-sm text-graphite">No client data yet</div>}
+      </Card>
+
+      <Card className="p-5 bg-surface-1 border-white/10" data-testid="team-utilization-card">
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-display text-sm font-semibold">Team Utilization (last 30 days)</p>
+          <p className="font-mono text-xs text-graphite">{(data.utilization.total_hours || 0).toFixed(1)}h total</p>
+        </div>
+        {data.utilization.members.length > 0 ? (
+          <div className="space-y-3">
+            {data.utilization.members.map((m) => {
+              const maxH = Math.max(...data.utilization.members.map((x) => x.hours), 1);
+              return (
+                <div key={m.user_id}>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span>{m.user_name}</span>
+                    <span className="font-mono text-xs text-graphite">{m.hours.toFixed(1)}h ({m.billable_hours.toFixed(1)}h billable) · {m.projects} project(s)</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
+                    <div className="h-full rounded-full bg-info" style={{ width: `${(m.hours / maxH) * 100}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-graphite py-6 text-center">No time logged yet — log hours on any project page and utilization appears here.</p>
+        )}
       </Card>
     </div>
   );

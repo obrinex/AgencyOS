@@ -78,7 +78,7 @@ class ContactCreate(BaseModel):
 
 
 @router.get("/leads")
-async def list_leads(stage: Optional[str] = None, owner_id: Optional[str] = None, search: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def list_leads(stage: Optional[str] = None, owner_id: Optional[str] = None, search: Optional[str] = None, user: dict = Depends(require_staff)):
     query = {}
     if stage:
         query["stage"] = stage
@@ -154,7 +154,7 @@ async def import_leads_csv(file: UploadFile = File(...), user: dict = Depends(re
 
 
 @router.get("/leads/{lead_id}")
-async def get_lead(lead_id: str, user: dict = Depends(get_current_user)):
+async def get_lead(lead_id: str, user: dict = Depends(require_staff)):
     lead = await db.leads.find_one({"_id": to_object_id(lead_id)})
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -201,7 +201,7 @@ async def patch_stage(lead_id: str, payload: StagePatch, user: dict = Depends(re
 
 
 @router.get("/leads/{lead_id}/activities")
-async def get_activities(lead_id: str, user: dict = Depends(get_current_user)):
+async def get_activities(lead_id: str, user: dict = Depends(require_staff)):
     activities = await db.lead_activities.find({"lead_id": lead_id}).sort("created_at", -1).to_list(500)
     return serialize_list(activities)
 
@@ -228,7 +228,7 @@ async def webhook_lead_capture(payload: LeadCreate):
 # ---------------- Contacts ----------------
 
 @router.get("/contacts")
-async def list_contacts(lead_id: Optional[str] = None, client_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def list_contacts(lead_id: Optional[str] = None, client_id: Optional[str] = None, user: dict = Depends(require_staff)):
     query = {}
     if lead_id:
         query["lead_id"] = lead_id

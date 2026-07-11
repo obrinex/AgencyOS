@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/files", tags=["files"])
 
 UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 @router.get("")
@@ -38,6 +39,8 @@ async def upload_file(related_type: str, related_id: Optional[str] = None, file:
     stored_name = f"{uuid.uuid4().hex}{ext}"
     dest = UPLOAD_DIR / stored_name
     content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large. Maximum upload size is 25 MB.")
     with open(dest, "wb") as f:
         f.write(content)
     now = datetime.now(timezone.utc).isoformat()
@@ -70,6 +73,11 @@ async def delete_file(file_id: str, user: dict = Depends(get_current_user)):
     doc = await db.files.find_one({"_id": to_object_id(file_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="File not found")
+    if user["role"] == "client":
+        owns_file = doc.get("uploaded_by") == user["id"]
+        linked_to_client = doc.get("related_type") == "client" and doc.get("related_id") == user.get("client_id")
+        if not (owns_file and linked_to_client):
+            raise HTTPException(status_code=403, detail="Not authorized")
     path = UPLOAD_DIR / doc["filename"]
     if path.exists():
         path.unlink()

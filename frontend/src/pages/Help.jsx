@@ -1,13 +1,15 @@
 import { useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import {
   LayoutDashboard, KanbanSquare, Users, FileText, Building2, FolderKanban, CheckSquare,
   LifeBuoy, DollarSign, Receipt, FileSignature, BookOpen, Lock, FolderOpen, StickyNote,
-  Zap, BarChart3, Settings as SettingsIcon, HelpCircle, Search, CalendarDays,
+  Zap, BarChart3, Settings as SettingsIcon, HelpCircle, Search, CalendarDays, Sparkles, MessageCircle,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const HELP_SECTIONS = [
   {
@@ -126,8 +128,8 @@ const HELP_SECTIONS = [
         description: "Create, send and collect payment on client invoices.",
         steps: [
           "New Invoice lets you pick a Currency and Conversion Rate the same way as Expenses — the invoice total is stored in its own currency, but rolls up into your base-currency reports automatically.",
-          "Use 'Send to Client' to email the invoice (via Resend) — it also becomes visible in the Client Portal.",
-          "'Pay Now' starts a Stripe Checkout session (charged in the invoice's own currency) — status updates automatically once payment completes.",
+          "Use 'Send to Client' to email the invoice — it also becomes visible in the Client Portal.",
+          "When a client clicks 'Click to Pay', a payment request is created for your team. You can attach a payment link from the Dashboard and it will be emailed to the client.",
           "Click the download icon on any invoice row (or 'Download PDF' on the invoice detail page) to export it as a PDF.",
         ],
       },
@@ -201,6 +203,18 @@ const HELP_SECTIONS = [
 
 export default function Help() {
   const [query, setQuery] = useState("");
+  const { openAssistant } = useOutletContext();
+
+  const guideSuggestions = [
+    "What should I check every morning on the dashboard?",
+    "How do I create and send an invoice?",
+    "How does moving a lead to Won work?",
+    "Which setup items should I finish before hosting?",
+  ];
+
+  const askGuide = (prompt = "Help me understand how to use this dashboard. Start with the most important modules and where I should click for common tasks.") => {
+    openAssistant({ mode: "guide", prompt, suggestions: guideSuggestions });
+  };
 
   const filtered = HELP_SECTIONS.map((section) => ({
     ...section,
@@ -211,7 +225,33 @@ export default function Help() {
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6" data-testid="help-page">
-      <PageHeader title="Help & How to Use" description="A quick guide to every module in AgencyOS" />
+      <PageHeader
+        title="Help & How to Use"
+        description="A quick guide to every module in AgencyOS"
+        actions={
+          <Button data-testid="help-ai-guide-btn" size="sm" className="gap-1.5" onClick={() => askGuide()}>
+            <Sparkles className="h-3.5 w-3.5" /> Ask Guide AI
+          </Button>
+        }
+      />
+
+      <Card className="p-4 bg-surface-1 border-white/10" data-testid="dashboard-guide-ai-card">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 border border-white/10">
+              <MessageCircle className="h-4 w-4 text-graphite" />
+            </div>
+            <div>
+              <p className="font-display text-sm font-semibold">Dashboard Guide AI</p>
+              <p className="mt-1 text-sm text-graphite">Ask where a feature lives, what a metric means, or what steps to take next.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button data-testid="guide-ai-startup-check-btn" size="sm" variant="outline" className="border-white/10" onClick={() => askGuide("Walk me through the dashboard checks I should do before starting work today.")}>Daily check</Button>
+            <Button data-testid="guide-ai-hosting-check-btn" size="sm" variant="outline" className="border-white/10" onClick={() => askGuide("What should I verify in AgencyOS before hosting this dashboard publicly?")}>Hosting check</Button>
+          </div>
+        </div>
+      </Card>
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-graphite" />

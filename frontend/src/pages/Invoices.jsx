@@ -113,11 +113,11 @@ export default function Invoices() {
                 <Label>Currency</Label>
                 <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, conversion_rate: v === "INR" ? 1 : form.conversion_rate })}>
                   <SelectTrigger data-testid="invoice-form-currency" className="bg-surface-2 border-white/10"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="INR">INR (₹)</SelectItem><SelectItem value="USD">USD ($)</SelectItem></SelectContent>
+                  <SelectContent><SelectItem value="INR">INR</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Conversion Rate (to ₹)</Label>
+                <Label>Conversion Rate (to INR)</Label>
                 <Input data-testid="invoice-form-conversion-rate" type="number" step="0.01" disabled={form.currency === "INR"} value={form.conversion_rate} onChange={(e) => setForm({ ...form, conversion_rate: e.target.value })} className="bg-surface-2 border-white/10" />
               </div>
             </div>

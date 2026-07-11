@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from database import db, serialize_doc, serialize_list, to_object_id
-from auth_utils import get_current_user, require_staff
+from auth_utils import require_staff
 
 router = APIRouter(prefix="/api/kb", tags=["knowledge_base"])
 
@@ -24,7 +24,7 @@ class ArticleUpdate(BaseModel):
 
 
 @router.get("")
-async def list_articles(category: Optional[str] = None, search: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def list_articles(category: Optional[str] = None, search: Optional[str] = None, user: dict = Depends(require_staff)):
     query = {}
     if category:
         query["category"] = category
@@ -45,7 +45,7 @@ async def create_article(payload: ArticleCreate, user: dict = Depends(require_st
 
 
 @router.get("/{article_id}")
-async def get_article(article_id: str, user: dict = Depends(get_current_user)):
+async def get_article(article_id: str, user: dict = Depends(require_staff)):
     article = await db.kb_articles.find_one({"_id": to_object_id(article_id)})
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")

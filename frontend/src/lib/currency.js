@@ -1,10 +1,9 @@
-export const CURRENCY_SYMBOLS = { INR: "\u20B9", USD: "$" };
 export const SUPPORTED_CURRENCIES = ["INR", "USD"];
 export const BASE_CURRENCY = "INR";
 
 export function formatMoney(amount, currencyCode = BASE_CURRENCY) {
-  const symbol = CURRENCY_SYMBOLS[currencyCode] || `${currencyCode} `;
-  return `${symbol}${(amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const code = currencyCode || BASE_CURRENCY;
+  return `${code} ${(amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
 export const EXPENSE_TYPES = [

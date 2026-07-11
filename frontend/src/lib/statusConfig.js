@@ -49,9 +49,11 @@ export const INVOICE_STATUS_CONFIG = {
   draft: { label: "Draft", color: "graphite" },
   sent: { label: "Sent", color: "info" },
   viewed: { label: "Viewed", color: "info" },
+  pending: { label: "Pending / Delayed", color: "warning" },
   paid: { label: "Paid", color: "success" },
   partial: { label: "Partial", color: "warning" },
   overdue: { label: "Overdue", color: "danger" },
+  failed: { label: "Failed to Pay (Loss)", color: "danger" },
   cancelled: { label: "Cancelled", color: "graphite" },
 };
 

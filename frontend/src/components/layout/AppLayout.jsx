@@ -8,6 +8,10 @@ import AIAssistant from "@/components/AIAssistant";
 export default function AppLayout() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantMode, setAssistantMode] = useState("general");
+  const [assistantPrompt, setAssistantPrompt] = useState("");
+  const [assistantPromptKey, setAssistantPromptKey] = useState(0);
+  const [assistantSuggestions, setAssistantSuggestions] = useState(undefined);
 
   useEffect(() => {
     const handler = (e) => {
@@ -20,17 +24,32 @@ export default function AppLayout() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  const openAssistant = ({ mode = "general", prompt = "", suggestions } = {}) => {
+    setAssistantMode(mode);
+    setAssistantSuggestions(suggestions);
+    setAssistantPrompt(prompt);
+    setAssistantPromptKey(Date.now());
+    setAssistantOpen(true);
+  };
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background" data-testid="app-layout">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Topbar onOpenCommandPalette={() => setPaletteOpen(true)} onOpenAssistant={() => setAssistantOpen(true)} />
+        <Topbar onOpenCommandPalette={() => setPaletteOpen(true)} onOpenAssistant={() => openAssistant()} />
         <main className="flex-1 overflow-y-auto scrollbar-thin">
-          <Outlet />
+          <Outlet context={{ openAssistant }} />
         </main>
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-      <AIAssistant open={assistantOpen} onOpenChange={setAssistantOpen} />
+      <AIAssistant
+        open={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        initialPrompt={assistantPrompt}
+        initialPromptKey={assistantPromptKey}
+        mode={assistantMode}
+        suggestions={assistantSuggestions}
+      />
     </div>
   );
 }

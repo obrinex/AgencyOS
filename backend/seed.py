@@ -5,8 +5,10 @@ from auth_utils import hash_password, verify_password
 
 
 async def seed_admin():
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@obrinex.com")
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+    admin_email = os.environ.get("ADMIN_EMAIL")
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    if not admin_email or not admin_password:
+        raise RuntimeError("ADMIN_EMAIL and ADMIN_PASSWORD must be set before starting the application")
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
         await db.users.insert_one({
@@ -18,8 +20,8 @@ async def seed_admin():
             "two_fa_enabled": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one({"_id": existing["_id"]}, {"$set": {"password_hash": hash_password(admin_password)}})
+    # Never reset an existing administrator password on startup. Password changes
+    # must use the authenticated reset flow, not an environment side effect.
 
 
 async def seed_company_settings():

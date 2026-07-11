@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -68,7 +68,7 @@ class MilestoneCreate(BaseModel):
 
 
 @router.get("/projects")
-async def list_projects(client_id: Optional[str] = None, status: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def list_projects(client_id: Optional[str] = None, status: Optional[str] = None, user: dict = Depends(require_staff)):
     query = {}
     if client_id:
         query["client_id"] = client_id
@@ -98,7 +98,7 @@ async def create_project(payload: ProjectCreate, user: dict = Depends(require_st
 
 
 @router.get("/projects/{project_id}")
-async def get_project(project_id: str, user: dict = Depends(get_current_user)):
+async def get_project(project_id: str, user: dict = Depends(require_staff)):
     project = await db.projects.find_one({"_id": to_object_id(project_id)})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -154,8 +154,86 @@ async def toggle_milestone(milestone_id: str, user: dict = Depends(require_staff
 
 # ---------------- Tasks ----------------
 
+@router.post("/projects/{project_id}/share")
+async def share_project(project_id: str, user: dict = Depends(require_staff)):
+    import secrets as _secrets
+    project = await db.projects.find_one({"_id": to_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    token = project.get("share_token")
+    if not token:
+        token = _secrets.token_urlsafe(16)
+        await db.projects.update_one({"_id": project["_id"]}, {"$set": {"share_token": token}})
+    return {"share_token": token}
+
+
+@router.get("/team/utilization")
+async def team_utilization(days: int = 30, user: dict = Depends(require_staff)):
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()[:10]
+    entries = await db.time_entries.find({"date": {"$gte": since}}).to_list(2000)
+    by_user = {}
+    for e in entries:
+        key = e.get("user_id") or "unknown"
+        if key not in by_user:
+            by_user[key] = {"user_id": key, "user_name": e.get("user_name") or "Unknown", "hours": 0, "billable_hours": 0, "projects": set()}
+        by_user[key]["hours"] += e.get("hours", 0)
+        if e.get("billable"):
+            by_user[key]["billable_hours"] += e.get("hours", 0)
+        by_user[key]["projects"].add(e.get("project_id"))
+    result = []
+    for u in by_user.values():
+        u["projects"] = len(u["projects"])
+        result.append(u)
+    result.sort(key=lambda x: -x["hours"])
+    return {"days": days, "members": result, "total_hours": sum(u["hours"] for u in result)}
+
+
+# ---------------- Time tracking ----------------
+
+class TimeEntryCreate(BaseModel):
+    description: str
+    hours: float
+    date: Optional[str] = None
+    billable: Optional[bool] = True
+
+
+@router.get("/projects/{project_id}/time")
+async def list_time_entries(project_id: str, user: dict = Depends(require_staff)):
+    entries = await db.time_entries.find({"project_id": project_id}).sort("date", -1).to_list(500)
+    total = sum(e.get("hours", 0) for e in entries)
+    billable = sum(e.get("hours", 0) for e in entries if e.get("billable"))
+    return {"entries": serialize_list(entries), "total_hours": total, "billable_hours": billable}
+
+
+@router.post("/projects/{project_id}/time")
+async def create_time_entry(project_id: str, payload: TimeEntryCreate, user: dict = Depends(require_staff)):
+    project = await db.projects.find_one({"_id": to_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if payload.hours <= 0 or payload.hours > 24:
+        raise HTTPException(status_code=400, detail="Hours must be between 0 and 24")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = payload.model_dump()
+    doc.update({
+        "project_id": project_id,
+        "user_id": user["id"],
+        "user_name": user.get("name"),
+        "date": payload.date or now[:10],
+        "created_at": now,
+    })
+    res = await db.time_entries.insert_one(doc)
+    entry = await db.time_entries.find_one({"_id": res.inserted_id})
+    return serialize_doc(entry)
+
+
+@router.delete("/time/{entry_id}")
+async def delete_time_entry(entry_id: str, user: dict = Depends(require_staff)):
+    await db.time_entries.delete_one({"_id": to_object_id(entry_id)})
+    return {"message": "Time entry deleted"}
+
+
 @router.get("/tasks")
-async def list_tasks(assignee_id: Optional[str] = None, related_type: Optional[str] = None, related_id: Optional[str] = None, status: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def list_tasks(assignee_id: Optional[str] = None, related_type: Optional[str] = None, related_id: Optional[str] = None, status: Optional[str] = None, user: dict = Depends(require_staff)):
     query = {}
     if assignee_id:
         query["assignee_id"] = assignee_id
@@ -170,7 +248,7 @@ async def list_tasks(assignee_id: Optional[str] = None, related_type: Optional[s
 
 
 @router.post("/tasks")
-async def create_task(payload: TaskCreate, user: dict = Depends(get_current_user)):
+async def create_task(payload: TaskCreate, user: dict = Depends(require_staff)):
     now = datetime.now(timezone.utc).isoformat()
     doc = payload.model_dump()
     doc.update({"created_by": user["id"], "created_at": now, "completed_at": None})
@@ -180,7 +258,7 @@ async def create_task(payload: TaskCreate, user: dict = Depends(get_current_user
 
 
 @router.put("/tasks/{task_id}")
-async def update_task(task_id: str, payload: TaskUpdate, user: dict = Depends(get_current_user)):
+async def update_task(task_id: str, payload: TaskUpdate, user: dict = Depends(require_staff)):
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
     if updates.get("status") == "done":
         updates["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -192,7 +270,7 @@ async def update_task(task_id: str, payload: TaskUpdate, user: dict = Depends(ge
 
 
 @router.patch("/tasks/{task_id}/status")
-async def patch_task_status(task_id: str, status: str, user: dict = Depends(get_current_user)):
+async def patch_task_status(task_id: str, status: str, user: dict = Depends(require_staff)):
     if status not in TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
     updates = {"status": status}
@@ -206,6 +284,6 @@ async def patch_task_status(task_id: str, status: str, user: dict = Depends(get_
 
 
 @router.delete("/tasks/{task_id}")
-async def delete_task(task_id: str, user: dict = Depends(get_current_user)):
+async def delete_task(task_id: str, user: dict = Depends(require_staff)):
     await db.tasks.delete_one({"_id": to_object_id(task_id)})
     return {"message": "Task deleted"}

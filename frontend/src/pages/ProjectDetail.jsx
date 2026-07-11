@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Flag, DollarSign, Building2 } from "lucide-react";
+import { ArrowLeft, Plus, Flag, DollarSign, Building2, Timer, Trash2, Link2 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import { PROJECT_STATUS_CONFIG, PROJECT_STATUS_LIST, TASK_STATUS_CONFIG, TASK_STATUS_LIST, PRIORITY_CONFIG } from "@/lib/statusConfig";
@@ -25,10 +25,30 @@ export default function ProjectDetail() {
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskForm, setTaskForm] = useState(emptyTask);
   const [milestoneTitle, setMilestoneTitle] = useState("");
+  const [time, setTime] = useState(null);
+  const [timeForm, setTimeForm] = useState({ description: "", hours: "" });
 
   const load = async () => {
-    const { data } = await api.get(`/projects/${id}`);
+    const [{ data }, t] = await Promise.all([api.get(`/projects/${id}`), api.get(`/projects/${id}/time`)]);
     setProject(data);
+    setTime(t.data);
+  };
+
+  const logTime = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post(`/projects/${id}/time`, { description: timeForm.description, hours: parseFloat(timeForm.hours) });
+      toast.success("Time logged");
+      setTimeForm({ description: "", hours: "" });
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const removeTime = async (entryId) => {
+    await api.delete(`/time/${entryId}`);
+    load();
   };
 
   useEffect(() => { load(); }, [id]);
@@ -85,10 +105,27 @@ export default function ProjectDetail() {
           <h1 className="font-display text-2xl font-bold">{project.name}</h1>
           {project.client && <p className="flex items-center gap-1.5 text-sm text-graphite mt-1"><Building2 className="h-3.5 w-3.5" /> {project.client.company_name}</p>}
         </div>
-        <Select value={project.status} onValueChange={changeStatus}>
-          <SelectTrigger data-testid="project-status-select" className="w-48 bg-surface-1 border-white/10"><SelectValue /></SelectTrigger>
-          <SelectContent>{PROJECT_STATUS_LIST.map((s) => <SelectItem key={s} value={s}>{PROJECT_STATUS_CONFIG[s].label}</SelectItem>)}</SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Button
+            data-testid="copy-status-link-btn"
+            size="sm" variant="outline" className="gap-1.5 border-white/10"
+            onClick={async () => {
+              try {
+                const { data } = await api.post(`/projects/${id}/share`);
+                await navigator.clipboard.writeText(`${window.location.origin}/status/${data.share_token}`);
+                toast.success("Status link copied — share it with your client");
+              } catch (err) {
+                toast.error(formatApiError(err.response?.data?.detail));
+              }
+            }}
+          >
+            <Link2 className="h-3.5 w-3.5" /> Client Status Link
+          </Button>
+          <Select value={project.status} onValueChange={changeStatus}>
+            <SelectTrigger data-testid="project-status-select" className="w-48 bg-surface-1 border-white/10"><SelectValue /></SelectTrigger>
+            <SelectContent>{PROJECT_STATUS_LIST.map((s) => <SelectItem key={s} value={s}>{PROJECT_STATUS_CONFIG[s].label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -138,6 +175,29 @@ export default function ProjectDetail() {
               </div>
             ))}
             {project.milestones?.length === 0 && <p className="text-xs text-graphite">No milestones yet</p>}
+          </div>
+
+          <div className="pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="font-display font-semibold flex items-center gap-1.5"><Timer className="h-4 w-4" /> Time Tracking</p>
+              {time && <p className="font-mono text-xs text-graphite">{time.total_hours.toFixed(1)}h total</p>}
+            </div>
+            <form onSubmit={logTime} className="flex gap-2 mb-2">
+              <Input data-testid="time-desc-input" required value={timeForm.description} onChange={(e) => setTimeForm({ ...timeForm, description: e.target.value })} placeholder="What did you work on?" className="bg-surface-1 border-white/10" />
+              <Input data-testid="time-hours-input" required type="number" step="0.25" min="0.25" max="24" value={timeForm.hours} onChange={(e) => setTimeForm({ ...timeForm, hours: e.target.value })} placeholder="hrs" className="bg-surface-1 border-white/10 w-20" />
+              <Button data-testid="time-log-btn" size="sm" type="submit">Log</Button>
+            </form>
+            <div className="space-y-1.5">
+              {time?.entries?.map((t) => (
+                <div key={t.id} data-testid={`time-entry-${t.id}`} className="flex items-center gap-2 rounded-lg border border-white/10 bg-surface-1 px-3 py-2 text-sm group">
+                  <span className="font-mono text-xs text-success shrink-0 w-12">{t.hours}h</span>
+                  <span className="flex-1 truncate">{t.description}</span>
+                  <span className="font-mono text-[10px] text-carbon shrink-0">{t.date}</span>
+                  <button onClick={() => removeTime(t.id)} className="text-graphite hover:text-danger opacity-0 group-hover:opacity-100"><Trash2 className="h-3 w-3" /></button>
+                </div>
+              ))}
+              {time?.entries?.length === 0 && <p className="text-xs text-graphite">No time logged yet</p>}
+            </div>
           </div>
         </div>
       </div>

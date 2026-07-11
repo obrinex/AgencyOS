@@ -3,8 +3,8 @@ import pytest
 import requests
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-ADMIN_EMAIL = "admin@obrinex.com"
-ADMIN_PASSWORD = "AgencyOS@2026"
+ADMIN_EMAIL = "info@obrinex.space"
+ADMIN_PASSWORD = "Obrinex@2009"
 
 
 @pytest.fixture(scope="session")

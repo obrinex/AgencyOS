@@ -97,7 +97,7 @@ export default function Settings() {
           <div className="space-y-1"><Label>Currency</Label>
             <Select value={company.currency || "INR"} onValueChange={(v) => setCompany({ ...company, currency: v })}>
               <SelectTrigger data-testid="settings-currency" className="bg-surface-1 border-white/10"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="INR">INR (₹) — Base Currency</SelectItem><SelectItem value="USD">USD ($)</SelectItem></SelectContent>
+              <SelectContent><SelectItem value="INR">INR - Base Currency</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent>
             </Select>
             <p className="text-xs text-graphite mt-1">All finance totals across the app are aggregated in this base currency. Individual invoices/expenses can still be recorded in a different currency with a custom conversion rate.</p>
           </div>
@@ -164,6 +164,9 @@ export default function Settings() {
               <div className="space-y-1"><Label>Name</Label><Input data-testid="invite-form-name" required value={inviteForm.name} onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <div className="space-y-1"><Label>Email</Label><Input data-testid="invite-form-email" type="email" required value={inviteForm.email} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <DialogFooter><Button type="submit" data-testid="invite-form-submit">Send Invite</Button></DialogFooter>
+              <div className="text-xs text-graphite text-center pt-1">
+                Note: Please check your spam folder if the email is not delivered to you.
+              </div>
             </form>
           ) : (
             <div className="space-y-2" data-testid="invite-credentials-result">
@@ -171,6 +174,9 @@ export default function Settings() {
               <div className="rounded-lg bg-surface-2 border border-white/10 p-3 font-mono text-sm">
                 <p>Email: {inviteResult.email}</p>
                 <p>Password: {inviteResult.temp_password}</p>
+              </div>
+              <div className="text-xs text-graphite text-center pt-1">
+                Note: Please check your spam folder if the email is not delivered to you.
               </div>
             </div>
           )}
