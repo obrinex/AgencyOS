@@ -50,6 +50,10 @@ and `ADMIN_PASSWORD`. It never changes an existing password during startup.
    | `NVIDIA_API_KEY` | (optional) from https://build.nvidia.com — AI assistant |
    | `NVIDIA_MODEL` | (optional) defaults to `meta/llama-3.3-70b-instruct` |
    | `STRIPE_API_KEY` | (optional) invoice payments |
+   | `CASHFREE_APP_ID` | Cashfree client id — card/UPI/net banking |
+   | `CASHFREE_SECRET_KEY` | Cashfree client secret (also verifies webhooks) |
+   | `CASHFREE_ENV` | `sandbox` or `production` (default `sandbox`) |
+   | `BACKEND_URL` | Public URL of this backend, so Cashfree can reach the webhook |
    | transactional email key / `SENDER_EMAIL` | required for invoice and password-reset emails |
    | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | (optional) Calendar sync |
 6. Under **Settings → Custom Domains** add `api.obrinex.space`, then create

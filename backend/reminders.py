@@ -62,6 +62,41 @@ async def _process_due_reminders():
         logger.info(f"Reminder sent for meeting {m['_id']}")
 
 
+async def reconcile_cashfree_payments():
+    """Settle anything Cashfree has taken money for but whose webhook never landed.
+
+    Webhook delivery is best-effort — a deploy, a blip or an unreachable host
+    loses the callback and the invoice would sit unpaid indefinitely. This sweep
+    asks Cashfree directly about every outstanding link it issued.
+    """
+    import cashfree
+    from routers.public import _mark_paid
+
+    if not cashfree.is_configured():
+        return
+
+    for kind, coll in (("invoice", db.invoices), ("link", db.payment_links)):
+        try:
+            pending = await coll.find({
+                "cashfree_link_id": {"$exists": True, "$ne": None},
+                "status": {"$ne": "paid"},
+            }).to_list(200)
+        except Exception as e:
+            logger.error(f"Cashfree reconcile query failed: {e}")
+            continue
+
+        for doc in pending:
+            try:
+                remote = await cashfree.fetch_payment_link(doc["cashfree_link_id"])
+            except cashfree.CashfreeError:
+                continue  # transient — the next sweep retries
+            if not remote or (remote.get("link_status") or "").upper() != "PAID":
+                continue
+            label = doc.get("invoice_number") or doc.get("title") or "payment"
+            await _mark_paid(kind, doc["_id"], label)
+            logger.info(f"Reconciled Cashfree payment for {kind} {doc['_id']}")
+
+
 async def reminder_loop():
     logger.info("Meeting reminder loop started")
     while True:
@@ -69,6 +104,10 @@ async def reminder_loop():
             await _process_due_reminders()
         except Exception as e:
             logger.error(f"Reminder loop error: {e}")
+        try:
+            await reconcile_cashfree_payments()
+        except Exception as e:
+            logger.error(f"Cashfree reconcile error: {e}")
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
 

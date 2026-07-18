@@ -129,7 +129,7 @@ const HELP_SECTIONS = [
         steps: [
           "New Invoice lets you pick a Currency and Conversion Rate the same way as Expenses — the invoice total is stored in its own currency, but rolls up into your base-currency reports automatically.",
           "Use 'Send to Client' to email the invoice — it also becomes visible in the Client Portal.",
-          "When a client clicks 'Click to Pay', a payment request is created for your team. You can attach a payment link from the Dashboard and it will be emailed to the client.",
+          "Clients pay themselves: opening an invoice's payment page creates a Cashfree link automatically (INR and USD) for card, UPI or net banking. USD invoices lead with crypto since it avoids FX spread and card fees. Payments are auto-captured and the invoice marks itself paid — you just get the notification.",
           "Click the download icon on any invoice row (or 'Download PDF' on the invoice detail page) to export it as a PDF.",
         ],
       },

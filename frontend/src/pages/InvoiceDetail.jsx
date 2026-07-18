@@ -7,7 +7,6 @@ import { INVOICE_STATUS_CONFIG } from "@/lib/statusConfig";
 import { formatMoney } from "@/lib/currency";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { format } from "date-fns";
@@ -18,10 +17,6 @@ export default function InvoiceDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [invoice, setInvoice] = useState(null);
-  const [paying, setPaying] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [showLinkInput, setShowLinkInput] = useState(false);
-  const [paymentLink, setPaymentLink] = useState("");
   const [recordingStatus, setRecordingStatus] = useState("");
 
   const load = async () => {
@@ -30,44 +25,6 @@ export default function InvoiceDetail() {
   };
 
   useEffect(() => { load(); }, [id]);
-
-  // Client: if admin set a payment link → open it directly; otherwise silently notify admin
-  const requestPayment = async () => {
-    if (invoice.payment_link) {
-      window.open(invoice.payment_link, "_blank", "noopener,noreferrer");
-      return;
-    }
-    setPaying(true);
-    try {
-      await api.post(`/invoices/${id}/request-payment`, {});
-      toast.success("Request sent. You will receive a payment link in your inbox. Please check your spam folder if needed.");
-      load();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to send request");
-    } finally {
-      setPaying(false);
-    }
-  };
-
-  // Admin: send a custom payment link to client's email
-  const sendPaymentLink = async () => {
-    if (!paymentLink.trim()) {
-      toast.error("Please enter a payment link first");
-      return;
-    }
-    setSending(true);
-    try {
-      await api.post(`/invoices/${id}/send-payment-link`, { payment_link: paymentLink.trim() });
-      toast.success("Payment link sent successfully!");
-      setShowLinkInput(false);
-      setPaymentLink("");
-      load();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to send payment link");
-    } finally {
-      setSending(false);
-    }
-  };
 
   const sendInvoice = async () => {
     try {
@@ -117,9 +74,14 @@ export default function InvoiceDetail() {
             <p className="text-xs text-graphite mt-1">Issued {format(new Date(invoice.issue_date), "MMM d, yyyy")}</p>
             <p className="text-xs text-graphite">Due {format(new Date(invoice.due_date), "MMM d, yyyy")}</p>
             {invoice.currency && invoice.currency !== "INR" && (
-              <p className="text-xs font-mono text-graphite mt-1">
-                Currency: {invoice.currency} · Rate: 1 {invoice.currency} = INR {invoice.conversion_rate}
-              </p>
+              <>
+                <p className="text-xs font-mono text-graphite mt-1">
+                  Currency: {invoice.currency} · Rate: 1 {invoice.currency} = INR{" "}
+                  {Number(invoice.conversion_rate || 1).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  {invoice.conversion_rate_source && ` · ${invoice.conversion_rate_source}`}
+                </p>
+                <p className="text-[10px] text-carbon mt-0.5">Rate pinned when the invoice was issued.</p>
+              </>
             )}
           </div>
           <StatusBadge config={INVOICE_STATUS_CONFIG} value={invoice.status} testId="invoice-status-badge" />
@@ -153,8 +115,33 @@ export default function InvoiceDetail() {
           </div>
         </div>
 
+        {invoice.payment_claim && invoice.status !== "paid" && (
+          <div className="mt-6 rounded-lg bg-info/10 border border-info/20 p-4 text-sm" data-testid="payment-claim-banner">
+            <p className="font-medium text-info mb-1">Crypto payment submitted — needs your verification</p>
+            <p className="text-xs text-ash">
+              {invoice.payment_claim.payer_email} says they paid via {invoice.payment_claim.network}.
+            </p>
+            <p className="text-xs font-mono text-graphite mt-1 break-all">Tx: {invoice.payment_claim.tx_hash}</p>
+            <p className="text-xs text-graphite mt-2">Check your wallet for the incoming transfer, then change the invoice status to <span className="text-foreground">Paid</span>.</p>
+          </div>
+        )}
+
         {/* Action buttons */}
         <div className="mt-6 flex flex-wrap gap-2">
+          <Button
+            data-testid="copy-pay-link-btn" size="sm" variant="outline" className="gap-1.5 border-white/10"
+            onClick={async () => {
+              try {
+                const { data } = await api.get(`/invoices/${id}/payment-link`);
+                await navigator.clipboard.writeText(`${window.location.origin}/pay/${data.payment_token}`);
+                toast.success("Payment page link copied — share it with your client");
+              } catch (err) {
+                toast.error("Could not create the payment link");
+              }
+            }}
+          >
+            <Link2 className="h-3.5 w-3.5" /> Copy Pay Link
+          </Button>
           <Button data-testid="download-invoice-pdf-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={downloadPdf}>
             <FileDown className="h-3.5 w-3.5" /> Download PDF
           </Button>
@@ -164,16 +151,6 @@ export default function InvoiceDetail() {
             <>
               <Button data-testid="send-invoice-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={sendInvoice}>
                 <Send className="h-3.5 w-3.5" /> Send Invoice
-              </Button>
-              <Button
-                data-testid="send-payment-link-btn"
-                size="sm"
-                variant="outline"
-                className="gap-1.5 border-white/10"
-                onClick={() => setShowLinkInput(!showLinkInput)}
-              >
-                <Link2 className="h-3.5 w-3.5" />
-                {showLinkInput ? "Cancel" : "Send Payment Link"}
               </Button>
             </>
           )}
@@ -192,50 +169,28 @@ export default function InvoiceDetail() {
             </>
           )}
 
-          {/* Client action */}
-          {user.role === "client" && canAct && (
-            <Button data-testid="pay-invoice-btn" size="sm" className="gap-1.5" onClick={requestPayment} disabled={paying}>
-              {paying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5" />}
-              {invoice.payment_link ? "Pay Now →" : "Click to Pay"}
+          {/* Client action — opens the payment page (Crypto / Other Methods) */}
+          {user.role === "client" && canAct && invoice.payment_token && (
+            <Button
+              data-testid="pay-invoice-btn" size="sm"
+              className="gap-1.5 bg-[#26A17B] hover:bg-[#1f8968] text-white"
+              onClick={() => window.open(`/pay/${invoice.payment_token}`, "_blank", "noopener,noreferrer")}
+            >
+              <CreditCard className="h-3.5 w-3.5" /> Pay Invoice
             </Button>
           )}
         </div>
 
-        {/* Payment link ready notice for client */}
-        {user.role === "client" && invoice.payment_link && canAct && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg bg-success/10 border border-success/20 px-3 py-2">
-            <CreditCard className="h-3.5 w-3.5 text-success shrink-0" />
-            <p className="text-xs text-success">Your payment link is ready. Click <strong>Pay Now</strong> above to proceed, and please check your spam folder if the email is not in your inbox.</p>
+        {/* Client payment guidance */}
+        {user.role === "client" && canAct && (
+          <div className="mt-3 rounded-lg bg-surface-2 border border-white/10 px-3 py-2.5">
+            <p className="text-xs text-ash">Click <strong>Pay Invoice</strong> to open your payment page, where you can pay instantly by <strong>card, UPI or net banking</strong> — or with <strong>crypto</strong>.</p>
           </div>
         )}
-
-        {/* Admin: inline payment link input */}
-        {user.role !== "client" && showLinkInput && (
-          <div className="mt-4 p-4 rounded-lg bg-surface-2 border border-white/10 space-y-3">
-            <p className="text-xs font-mono uppercase text-graphite tracking-wider">Send Custom Payment Link</p>
-            <p className="text-xs text-graphite">Paste your payment link below (e.g. Razorpay, PayPal, bank transfer link). It will be emailed directly to the client.</p>
-            <div className="flex gap-2">
-              <Input
-                data-testid="payment-link-input"
-                value={paymentLink}
-                onChange={(e) => setPaymentLink(e.target.value)}
-                placeholder="https://your-payment-link.com/..."
-                className="bg-surface-1 border-white/10 text-sm flex-1"
-              />
-              <Button
-                data-testid="confirm-send-payment-link-btn"
-                size="sm"
-                className="gap-1.5 shrink-0"
-                onClick={sendPaymentLink}
-                disabled={sending || !paymentLink.trim()}
-              >
-                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                Send
-              </Button>
-            </div>
-            <p className="text-xs text-graphite/70 italic">
-              Note: Please check your spam folder if the email is not delivered to you.
-            </p>
+        {user.role === "client" && invoice.payment_claim && canAct && (
+          <div className="mt-3 flex items-center gap-2 rounded-lg bg-info/10 border border-info/20 px-3 py-2">
+            <CheckCircle2 className="h-3.5 w-3.5 text-info shrink-0" />
+            <p className="text-xs text-info">We've received your crypto payment submission and are verifying it. You'll get a confirmation shortly.</p>
           </div>
         )}
 

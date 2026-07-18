@@ -54,6 +54,20 @@ export default function Finance() {
 
   useEffect(() => { load(); }, []);
 
+  const fx = useFxRate(form.currency);
+
+  // Keep the form's rate in step with the live feed unless it was hand-edited.
+  useEffect(() => {
+    if (form.currency === "INR") {
+      setForm((f) => (f.conversion_rate === 1 ? f : { ...f, conversion_rate: 1 }));
+      return;
+    }
+    if (!fx.loading && fx.rate) {
+      setForm((f) => (f.rateEdited ? f : { ...f, conversion_rate: fx.rate }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fx.rate, fx.loading, form.currency]);
+
   const createExpense = async (e) => {
     e.preventDefault();
     try {
@@ -205,14 +219,28 @@ export default function Finance() {
               <div className="space-y-1"><Label>Amount *</Label><Input data-testid="expense-form-amount" type="number" required value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <div className="space-y-1">
                 <Label>Currency</Label>
-                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, conversion_rate: v === "INR" ? 1 : form.conversion_rate })}>
+                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, rateEdited: false, conversion_rate: v === "INR" ? 1 : fx.rate })}>
                   <SelectTrigger data-testid="expense-form-currency" className="bg-surface-2 border-white/10"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="INR">INR</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Conversion Rate (to INR)</Label>
-                <Input data-testid="expense-form-conversion-rate" type="number" step="0.01" disabled={form.currency === "INR"} value={form.conversion_rate} onChange={(e) => setForm({ ...form, conversion_rate: e.target.value })} className="bg-surface-2 border-white/10" />
+                <div className="flex items-center justify-between">
+                  <Label>Conversion Rate (to INR)</Label>
+                  {form.currency !== "INR" && (
+                    <button type="button" data-testid="expense-form-refresh-rate" onClick={() => { setForm({ ...form, rateEdited: false }); fx.refresh(); }}
+                            className="text-[10px] font-mono uppercase tracking-wider text-graphite hover:text-foreground">
+                      {fx.loading ? "…" : "Refresh"}
+                    </button>
+                  )}
+                </div>
+                <Input data-testid="expense-form-conversion-rate" type="number" step="0.01" disabled={form.currency === "INR"} value={form.conversion_rate}
+                       onChange={(e) => setForm({ ...form, conversion_rate: e.target.value, rateEdited: true })} className="bg-surface-2 border-white/10" />
+                {form.currency !== "INR" && (
+                  <p className={`text-[10px] font-mono ${fx.stale ? "text-warning" : "text-graphite"}`} data-testid="expense-form-rate-source">
+                    {form.rateEdited ? "Manual override" : describeRate(form.currency, fx)}
+                  </p>
+                )}
               </div>
               <div className="space-y-1">
                 <Label>Expense Type</Label>

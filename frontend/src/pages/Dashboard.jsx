@@ -11,13 +11,33 @@ import api from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
 
 import { STAGE_CONFIG } from "@/lib/statusConfig";
 import { formatMoney } from "@/lib/currency";
 import { formatDistanceToNow, format } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
+
+const EMPTY_STATS = {
+  revenue: 0,
+  mrr: 0,
+  arr: 0,
+  outstanding: 0,
+  profit: 0,
+  expenses: 0,
+  pipeline_value: 0,
+  conversion_rate: 0,
+  avg_deal_size: 0,
+  total_leads: 0,
+  sales_funnel: [],
+  todays_tasks: [],
+  upcoming_meetings: [],
+  active_projects_count: 0,
+  at_risk_projects_count: 0,
+};
+
+const EMPTY_FINANCE = {
+  revenue_by_month: [],
+};
 
 function KpiCard({ icon: Icon, label, value, sub, testId }) {
   return (
@@ -37,53 +57,18 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [finance, setFinance] = useState(null);
   const [activity, setActivity] = useState([]);
-  const [paymentRequests, setPaymentRequests] = useState([]);
-  const [sendingLink, setSendingLink] = useState({});
-  const [links, setLinks] = useState({});
-
-  const loadRequests = async () => {
-    try {
-      const { data } = await api.get("/admin/payment-requests");
-      setPaymentRequests(data);
-    } catch (e) {}
-  };
-
   useEffect(() => {
     (async () => {
-      try {
-        const [s, f, a, pr] = await Promise.all([
-          api.get("/dashboard/stats"),
-          api.get("/finance/summary"),
-          api.get("/dashboard/activity?limit=8"),
-          api.get("/admin/payment-requests"),
-        ]);
-        setStats(s.data);
-        setFinance(f.data);
-        setActivity(a.data);
-        setPaymentRequests(pr.data);
-      } catch (e) {}
+      const [s, f, a] = await Promise.allSettled([
+        api.get("/dashboard/stats"),
+        api.get("/finance/summary"),
+        api.get("/dashboard/activity?limit=8"),
+      ]);
+      setStats(s.status === "fulfilled" ? { ...EMPTY_STATS, ...s.value.data } : EMPTY_STATS);
+      setFinance(f.status === "fulfilled" ? { ...EMPTY_FINANCE, ...f.value.data } : EMPTY_FINANCE);
+      setActivity(a.status === "fulfilled" ? a.value.data : []);
     })();
   }, []);
-
-  const handleSendLink = async (requestId) => {
-    const link = links[requestId];
-    if (!link) {
-      toast.error("Please enter a payment link");
-      return;
-    }
-    setSendingLink(prev => ({ ...prev, [requestId]: true }));
-    try {
-      await api.post(`/admin/payment-requests/${requestId}/send-link`, { payment_link: link });
-      toast.success("Payment link sent successfully!");
-      setLinks(prev => ({ ...prev, [requestId]: "" }));
-      await loadRequests();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to send link");
-    } finally {
-      setSendingLink(prev => ({ ...prev, [requestId]: false }));
-    }
-  };
-
 
   if (!stats) {
     return (
@@ -219,60 +204,6 @@ export default function Dashboard() {
           )}
         </Card>
       </div>
-
-      <Card className="p-5 border-white/10 bg-surface-1" data-testid="widget-payment-requests">
-        <div className="flex items-center justify-between mb-4">
-          <p className="font-display text-sm font-semibold flex items-center gap-2">
-            <DollarSign className="h-4 w-4" /> Invoice Payment Requests
-          </p>
-        </div>
-        {paymentRequests.length === 0 ? (
-          <p className="text-sm text-graphite py-6 text-center">No pending payment requests</p>
-        ) : (
-          <div className="space-y-4">
-            {paymentRequests.map((req) => (
-              <div key={req.id} className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-lg bg-surface-2 border border-white/5" data-testid={`payment-request-row-${req.id}`}>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-bold text-foreground">{req.invoice_number}</span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-white/5 text-graphite font-mono uppercase">{req.status}</span>
-                  </div>
-                  <p className="text-sm font-medium">{req.client_name}</p>
-                  <p className="text-xs text-graphite">Requested: {format(new Date(req.created_at), "MMM d, yyyy h:mm a")}</p>
-                  <p className="text-sm font-mono font-semibold text-warning">{formatMoney(req.amount, req.currency)}</p>
-                </div>
-                {req.status === "pending" ? (
-                  <div className="flex flex-1 max-w-md items-center gap-2">
-                    <Input
-                      placeholder="Paste payment link here..."
-                      value={links[req.id] || ""}
-                      onChange={(e) => setLinks(prev => ({ ...prev, [req.id]: e.target.value }))}
-                      className="bg-surface-3 border-white/10 text-sm h-9"
-                      data-testid={`payment-request-input-${req.id}`}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() => handleSendLink(req.id)}
-                      disabled={sendingLink[req.id]}
-                      className="gap-1.5 h-9 shrink-0"
-                      data-testid={`payment-request-submit-${req.id}`}
-                    >
-                      {sendingLink[req.id] ? "Sending..." : "Send Link"}
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="text-xs text-graphite bg-white/5 border border-white/5 rounded px-3 py-1.5 truncate max-w-xs font-mono">
-                    Sent Link: <a href={req.payment_link} target="_blank" rel="noreferrer" className="text-info hover:underline">{req.payment_link}</a>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="mt-4 text-xs text-graphite border-t border-white/5 pt-3">
-          Note: Please check your spam folder if the email is not delivered to you.
-        </div>
-      </Card>
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-5 border-white/10 bg-surface-1 flex items-center justify-between" data-testid="widget-active-projects">

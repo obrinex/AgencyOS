@@ -7,6 +7,7 @@ import EmptyState from "@/components/EmptyState";
 import StatusBadge from "@/components/StatusBadge";
 import { INVOICE_STATUS_CONFIG } from "@/lib/statusConfig";
 import { formatMoney } from "@/lib/currency";
+import { useFxRate, describeRate } from "@/hooks/useFxRate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
-const emptyForm = { client_id: "", description: "Services rendered", quantity: 1, price: "", currency: "INR", conversion_rate: 1 };
+const emptyForm = { client_id: "", description: "Services rendered", quantity: 1, price: "", currency: "INR", conversion_rate: 1, rateEdited: false };
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState(null);
@@ -24,6 +25,14 @@ export default function Invoices() {
   const [form, setForm] = useState(emptyForm);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const fx = useFxRate(form.currency);
+
+  // Track the live rate unless the user typed their own.
+  useEffect(() => {
+    if (form.currency === "INR" || form.rateEdited || fx.loading || !fx.rate) return;
+    setForm((f) => (f.conversion_rate === fx.rate ? f : { ...f, conversion_rate: fx.rate }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fx.rate, fx.loading, form.currency, form.rateEdited]);
 
   const load = async () => {
     const [i, c] = await Promise.all([api.get("/invoices"), api.get("/clients")]);
@@ -111,14 +120,20 @@ export default function Invoices() {
               <div className="space-y-1"><Label>Price *</Label><Input data-testid="invoice-form-price" type="number" required value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <div className="space-y-1">
                 <Label>Currency</Label>
-                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, conversion_rate: v === "INR" ? 1 : form.conversion_rate })}>
+                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, rateEdited: false, conversion_rate: v === "INR" ? 1 : fx.rate })}>
                   <SelectTrigger data-testid="invoice-form-currency" className="bg-surface-2 border-white/10"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="INR">INR</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
                 <Label>Conversion Rate (to INR)</Label>
-                <Input data-testid="invoice-form-conversion-rate" type="number" step="0.01" disabled={form.currency === "INR"} value={form.conversion_rate} onChange={(e) => setForm({ ...form, conversion_rate: e.target.value })} className="bg-surface-2 border-white/10" />
+                <Input data-testid="invoice-form-conversion-rate" type="number" step="0.01" disabled={form.currency === "INR"} value={form.conversion_rate}
+                       onChange={(e) => setForm({ ...form, conversion_rate: e.target.value, rateEdited: true })} className="bg-surface-2 border-white/10" />
+                {form.currency !== "INR" && (
+                  <p className={`text-[10px] font-mono mt-1 ${fx.stale ? "text-warning" : "text-graphite"}`} data-testid="invoice-form-rate-source">
+                    {form.rateEdited ? "Manual override" : describeRate(form.currency, fx)}
+                  </p>
+                )}
               </div>
             </div>
             <DialogFooter><Button type="submit" data-testid="invoice-form-submit">Create Invoice</Button></DialogFooter>

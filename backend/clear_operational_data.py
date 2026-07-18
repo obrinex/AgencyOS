@@ -15,7 +15,7 @@ from database import db, client
 
 COLLECTIONS = (
     "clients", "contacts", "leads", "lead_activities", "projects", "milestones",
-    "tasks", "time_entries", "invoices", "expenses", "payment_requests", "proposals",
+    "tasks", "time_entries", "invoices", "expenses", "proposals",
     "contracts", "tickets", "files", "notes", "notifications", "audit_logs",
     "automation_logs", "counters", "meetings", "kb_articles", "ai_chat_messages",
     "vault_entries", "google_oauth_states", "booking_settings", "leadform_settings",

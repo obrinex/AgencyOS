@@ -10,8 +10,10 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
 from database import db, serialize_doc, serialize_list, to_object_id, next_counter
-from auth_utils import get_current_user, require_admin, require_staff, log_audit
-from email_service import send_invoice_email, send_payment_link_email
+from auth_utils import get_current_user, require_admin, require_staff, log_audit, require_module
+require_finance = require_module("finance")
+from email_service import send_invoice_email
+import fx
 from finance_utils import to_base, SUPPORTED_CURRENCIES, EXPENSE_TYPES
 
 router = APIRouter(prefix="/api", tags=["finance"])
@@ -47,10 +49,6 @@ class InvoiceUpdate(BaseModel):
     conversion_rate: Optional[float] = None
 
 
-class PaymentRequestSendLink(BaseModel):
-    payment_link: str
-
-
 class PaymentStatusUpdate(BaseModel):
     status: str
     note: Optional[str] = None
@@ -75,7 +73,7 @@ def _calc_totals(line_items: list, tax: float):
 
 
 @router.get("/invoices")
-async def list_invoices(client_id: Optional[str] = None, status: Optional[str] = None, user: dict = Depends(require_staff)):
+async def list_invoices(client_id: Optional[str] = None, status: Optional[str] = None, user: dict = Depends(require_finance)):
     query = {}
     if client_id:
         query["client_id"] = client_id
@@ -85,14 +83,55 @@ async def list_invoices(client_id: Optional[str] = None, status: Optional[str] =
     return serialize_list(invoices)
 
 
+async def _invoice_recipient(invoice: dict):
+    portal_user = await db.users.find_one({"role": "client", "client_id": invoice["client_id"]})
+    if portal_user:
+        return portal_user["email"]
+    contact = await db.contacts.find_one({"client_id": invoice["client_id"], "email": {"$ne": None}})
+    return contact.get("email") if contact else None
+
+
+async def _payment_links(invoice: dict):
+    """Build (pay_url, has_crypto, has_other) for an invoice.
+    Both email buttons point at the public /pay page. 'Other methods' is always
+    offered — the page creates a Cashfree link on demand for INR invoices, and
+    falls back to crypto when Cashfree cannot serve the payment."""
+    settings = await db.payment_settings.find_one({"key": "main"}) or {}
+    frontend = os.environ.get("FRONTEND_URL", "")
+    has_crypto = bool(settings.get("crypto_enabled") and any(settings.get(k) for k in (
+        "usdt_trc20_address", "usdt_pol_address", "usdt_bep20_address", "btc_address", "eth_address", "sol_address")))
+    has_other = True
+    token = invoice.get("payment_token")
+    if not token:
+        import secrets as _secrets
+        token = _secrets.token_urlsafe(12)
+        await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": {"payment_token": token}})
+    pay_url = f"{frontend}/pay/{token}"
+    return pay_url, has_crypto, has_other
+
+
+@router.get("/finance/fx-rate")
+async def get_fx_rate(base: str = "USD", quote: str = "INR", refresh: bool = False,
+                      user: dict = Depends(require_finance)):
+    """Current conversion rate, with provenance so the UI can show how fresh it is."""
+    return await fx.get_rate(base, quote, force=refresh)
+
+
 @router.post("/invoices")
-async def create_invoice(payload: InvoiceCreate, user: dict = Depends(require_staff)):
+async def create_invoice(payload: InvoiceCreate, user: dict = Depends(require_finance)):
     if payload.currency and payload.currency not in SUPPORTED_CURRENCIES:
         raise HTTPException(status_code=400, detail=f"Currency must be one of {SUPPORTED_CURRENCIES}")
     now = datetime.now(timezone.utc).isoformat()
+    currency = payload.currency or "INR"
+    if payload.conversion_rate and payload.conversion_rate != 1.0:
+        conversion_rate, rate_source = payload.conversion_rate, "manual"
+    else:
+        info = await fx.get_rate(currency, "INR")
+        conversion_rate, rate_source = info["rate"], info["source"]
     line_items = [li.model_dump() for li in payload.line_items]
     subtotal, total = _calc_totals(line_items, payload.tax)
     number = await next_counter("invoice")
+    import secrets as _secrets
     doc = {
         "invoice_number": f"INV-{number:04d}",
         "client_id": payload.client_id,
@@ -101,14 +140,18 @@ async def create_invoice(payload: InvoiceCreate, user: dict = Depends(require_st
         "subtotal": subtotal,
         "tax": payload.tax or 0,
         "total": total,
-        "currency": payload.currency or "INR",
-        "conversion_rate": payload.conversion_rate or 1.0,
+        "currency": currency,
+        # Pinned at issue time from the live feed, so the invoice keeps the rate
+        # it was raised at even as the market moves.
+        "conversion_rate": conversion_rate,
+        "conversion_rate_source": rate_source,
         "status": "draft",
         "is_recurring": payload.is_recurring,
         "recurrence_interval": payload.recurrence_interval,
         "issue_date": now,
         "due_date": payload.due_date or (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
         "payment_link": None,
+        "payment_token": _secrets.token_urlsafe(12),
         "paid_at": None,
         "created_at": now,
         "updated_at": now,
@@ -116,7 +159,31 @@ async def create_invoice(payload: InvoiceCreate, user: dict = Depends(require_st
     res = await db.invoices.insert_one(doc)
     await log_audit(user["id"], "create_invoice", "invoice", str(res.inserted_id))
     invoice = await db.invoices.find_one({"_id": res.inserted_id})
-    return serialize_doc(invoice)
+
+    # Auto-email the invoice with payment links (custom + crypto) when the client has an email.
+    auto_sent = False
+    recipient = await _invoice_recipient(invoice)
+    if recipient:
+        pay_url, has_crypto, has_other = await _payment_links(invoice)
+        pdf_bytes = None
+        try:
+            pdf_bytes = await build_invoice_pdf_bytes(invoice)
+        except Exception:
+            pass  # never block invoice creation on PDF rendering
+        await send_invoice_email(
+            recipient, invoice["invoice_number"], invoice["total"], invoice["due_date"],
+            str(invoice["_id"]), invoice.get("currency", "INR"),
+            pay_url=pay_url, has_crypto=has_crypto, has_other=has_other,
+            pdf_bytes=pdf_bytes,
+        )
+        await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": {"status": "sent"}})
+        invoice = await db.invoices.find_one({"_id": invoice["_id"]})
+        auto_sent = True
+
+    data = serialize_doc(invoice)
+    data["auto_sent"] = auto_sent
+    data["sent_to"] = recipient if auto_sent else None
+    return data
 
 
 @router.get("/invoices/{invoice_id}")
@@ -126,6 +193,12 @@ async def get_invoice(invoice_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Invoice not found")
     if user["role"] == "client" and invoice["client_id"] != user.get("client_id"):
         raise HTTPException(status_code=403, detail="Not authorized")
+    # Ensure a public payment token exists so the client's "Pay Invoice" button always works.
+    if not invoice.get("payment_token"):
+        import secrets as _secrets
+        token = _secrets.token_urlsafe(12)
+        await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": {"payment_token": token}})
+        invoice["payment_token"] = token
     client = await db.clients.find_one({"_id": to_object_id(invoice["client_id"])})
     data = serialize_doc(invoice)
     data["client"] = serialize_doc(client) if client else None
@@ -133,7 +206,7 @@ async def get_invoice(invoice_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.put("/invoices/{invoice_id}")
-async def update_invoice(invoice_id: str, payload: InvoiceUpdate, user: dict = Depends(require_staff)):
+async def update_invoice(invoice_id: str, payload: InvoiceUpdate, user: dict = Depends(require_finance)):
     updates = {}
     if payload.line_items is not None:
         line_items = [li.model_dump() for li in payload.line_items]
@@ -191,13 +264,13 @@ async def record_payment_status(invoice_id: str, payload: PaymentStatusUpdate, u
 
 
 @router.delete("/invoices/{invoice_id}")
-async def delete_invoice(invoice_id: str, user: dict = Depends(require_staff)):
+async def delete_invoice(invoice_id: str, user: dict = Depends(require_finance)):
     await db.invoices.delete_one({"_id": to_object_id(invoice_id)})
     return {"message": "Invoice deleted"}
 
 
 @router.post("/invoices/{invoice_id}/send")
-async def send_invoice(invoice_id: str, user: dict = Depends(require_staff)):
+async def send_invoice(invoice_id: str, user: dict = Depends(require_finance)):
     invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -219,6 +292,12 @@ async def send_invoice(invoice_id: str, user: dict = Depends(require_staff)):
 
     await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat()}})
 
+    pay_url, has_crypto, has_other = await _payment_links(invoice)
+    pdf_bytes = None
+    try:
+        pdf_bytes = await build_invoice_pdf_bytes(invoice)
+    except Exception:
+        pass
     await send_invoice_email(
         recipient_email,
         invoice["invoice_number"],
@@ -226,71 +305,51 @@ async def send_invoice(invoice_id: str, user: dict = Depends(require_staff)):
         invoice["due_date"],
         invoice_id,
         invoice.get("currency", "INR"),
+        pay_url=pay_url, has_crypto=has_crypto, has_other=has_other,
+        pdf_bytes=pdf_bytes,
     )
 
     updated = await db.invoices.find_one({"_id": invoice["_id"]})
     return serialize_doc(updated)
 
 
-@router.post("/invoices/{invoice_id}/send-payment-link")
-async def send_invoice_payment_link(invoice_id: str, payload: PaymentRequestSendLink, user: dict = Depends(require_staff)):
-    """Admin sends a custom payment link directly to the client's email."""
-    if not payload.payment_link or not payload.payment_link.strip():
-        raise HTTPException(status_code=400, detail="Payment link is required")
-
+@router.get("/invoices/{invoice_id}/payment-link")
+async def get_invoice_payment_link(invoice_id: str, user: dict = Depends(require_finance)):
+    """Return (creating if needed) the public crypto-payment URL for this invoice."""
     invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-
-    recipient_email = None
-    portal_user = await db.users.find_one({"role": "client", "client_id": invoice["client_id"]})
-    if portal_user:
-        recipient_email = portal_user["email"]
-    else:
-        contact = await db.contacts.find_one({"client_id": invoice["client_id"], "email": {"$ne": None}})
-        if contact:
-            recipient_email = contact.get("email")
-
-    if not recipient_email:
-        raise HTTPException(
-            status_code=400,
-            detail="Client email not found. Please ensure the client has portal access or a contact email."
-        )
-
-    await send_payment_link_email(
-        to_email=recipient_email,
-        invoice_number=invoice["invoice_number"],
-        total=invoice["total"],
-        payment_link=payload.payment_link.strip(),
-        currency=invoice.get("currency", "INR")
-    )
-
-    now = datetime.now(timezone.utc).isoformat()
-    await db.invoices.update_one(
-        {"_id": invoice["_id"]},
-        {"$set": {"payment_link": payload.payment_link.strip(), "status": "sent", "updated_at": now}}
-    )
-
-    await log_audit(user["id"], "send_payment_link", "invoice", invoice_id)
-    updated = await db.invoices.find_one({"_id": invoice["_id"]})
-    return serialize_doc(updated)
+    import secrets as _secrets
+    token = invoice.get("payment_token")
+    if not token:
+        token = _secrets.token_urlsafe(12)
+        await db.invoices.update_one({"_id": invoice["_id"]}, {"$set": {"payment_token": token}})
+    frontend = os.environ.get("FRONTEND_URL", "")
+    return {"payment_token": token, "pay_url": f"{frontend}/pay/{token}"}
 
 
 # ---------------- Expenses ----------------
 
 @router.get("/expenses")
-async def list_expenses(user: dict = Depends(require_staff)):
+async def list_expenses(user: dict = Depends(require_finance)):
     expenses = await db.expenses.find({}).sort("date", -1).to_list(1000)
     return serialize_list(expenses)
 
 
 @router.post("/expenses")
-async def create_expense(payload: ExpenseCreate, user: dict = Depends(require_staff)):
+async def create_expense(payload: ExpenseCreate, user: dict = Depends(require_finance)):
     if payload.currency and payload.currency not in SUPPORTED_CURRENCIES:
         raise HTTPException(status_code=400, detail=f"Currency must be one of {SUPPORTED_CURRENCIES}")
     if payload.expense_type and payload.expense_type not in EXPENSE_TYPES:
         raise HTTPException(status_code=400, detail=f"Expense type must be one of {EXPENSE_TYPES}")
     doc = payload.model_dump()
+    # Same rule as invoices: pin the live rate unless one was supplied.
+    if not doc.get("conversion_rate") or doc.get("conversion_rate") == 1.0:
+        info = await fx.get_rate(doc.get("currency") or "INR", "INR")
+        doc["conversion_rate"] = info["rate"]
+        doc["conversion_rate_source"] = info["source"]
+    else:
+        doc["conversion_rate_source"] = "manual"
     doc["created_at"] = datetime.now(timezone.utc).isoformat()
     res = await db.expenses.insert_one(doc)
     expense = await db.expenses.find_one({"_id": res.inserted_id})
@@ -298,13 +357,13 @@ async def create_expense(payload: ExpenseCreate, user: dict = Depends(require_st
 
 
 @router.delete("/expenses/{expense_id}")
-async def delete_expense(expense_id: str, user: dict = Depends(require_staff)):
+async def delete_expense(expense_id: str, user: dict = Depends(require_finance)):
     await db.expenses.delete_one({"_id": to_object_id(expense_id)})
     return {"message": "Expense deleted"}
 
 
 @router.get("/finance/summary")
-async def finance_summary(user: dict = Depends(require_staff)):
+async def finance_summary(user: dict = Depends(require_finance)):
     invoices = await db.invoices.find({}).to_list(5000)
     expenses = await db.expenses.find({}).to_list(5000)
     leads = await db.leads.find({}).to_list(5000)
@@ -353,7 +412,7 @@ class RevenueGoalUpdate(BaseModel):
 
 
 @router.get("/finance/goal")
-async def get_revenue_goal(user: dict = Depends(require_staff)):
+async def get_revenue_goal(user: dict = Depends(require_finance)):
     settings = await db.company_settings.find_one({"key": "main"})
     goal = (settings or {}).get("monthly_revenue_goal") or 0
 
@@ -382,18 +441,13 @@ async def get_revenue_goal(user: dict = Depends(require_staff)):
 
 
 @router.put("/finance/goal")
-async def set_revenue_goal(payload: RevenueGoalUpdate, user: dict = Depends(require_staff)):
+async def set_revenue_goal(payload: RevenueGoalUpdate, user: dict = Depends(require_finance)):
     await db.company_settings.update_one({"key": "main"}, {"$set": {"monthly_revenue_goal": payload.monthly_revenue_goal}}, upsert=True)
     return await get_revenue_goal(user=user)
 
 
-@router.get("/invoices/{invoice_id}/pdf")
-async def invoice_pdf(invoice_id: str, user: dict = Depends(get_current_user)):
-    invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-    if user["role"] == "client" and invoice["client_id"] != user.get("client_id"):
-        raise HTTPException(status_code=403, detail="Not authorized")
+async def build_invoice_pdf_bytes(invoice: dict) -> bytes:
+    """Render the branded invoice PDF and return raw bytes (used by the download endpoint and email attachments)."""
     client = await db.clients.find_one({"_id": to_object_id(invoice["client_id"])})
     company = await db.company_settings.find_one({"key": "main"})
     agency_name = (company or {}).get("company_name") or "Obrinex"
@@ -471,14 +525,25 @@ async def invoice_pdf(invoice_id: str, user: dict = Depends(get_current_user)):
     c.showPage()
     c.save()
     buf.seek(0)
+    return buf.getvalue()
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+async def invoice_pdf(invoice_id: str, user: dict = Depends(get_current_user)):
+    invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if user["role"] == "client" and invoice["client_id"] != user.get("client_id"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    pdf = await build_invoice_pdf_bytes(invoice)
     return StreamingResponse(
-        buf, media_type="application/pdf",
+        _io.BytesIO(pdf), media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={invoice['invoice_number']}.pdf"},
     )
 
 
 @router.get("/finance/report/pdf")
-async def finance_report_pdf(user: dict = Depends(require_staff)):
+async def finance_report_pdf(user: dict = Depends(require_finance)):
     summary = await finance_summary(user=user)
 
     buf = _io.BytesIO()
@@ -527,100 +592,3 @@ async def finance_report_pdf(user: dict = Depends(require_staff)):
     )
 
 
-# ---------------- Payment Requests ----------------
-
-@router.post("/invoices/{invoice_id}/request-payment")
-async def request_payment(invoice_id: str, user: dict = Depends(get_current_user)):
-    invoice = await db.invoices.find_one({"_id": to_object_id(invoice_id)})
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-    if user["role"] == "client" and invoice["client_id"] != user.get("client_id"):
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    existing = await db.payment_requests.find_one({
-        "invoice_id": invoice_id,
-        "status": "pending"
-    })
-    if existing:
-        return serialize_doc(existing)
-
-    client = await db.clients.find_one({"_id": to_object_id(invoice["client_id"])})
-    client_name = client.get("company_name", "Unknown Client") if client else "Unknown Client"
-
-    doc = {
-        "invoice_id": invoice_id,
-        "invoice_number": invoice["invoice_number"],
-        "client_id": invoice["client_id"],
-        "client_name": client_name,
-        "amount": invoice["total"],
-        "currency": invoice.get("currency", "INR"),
-        "status": "pending",
-        "payment_link": "",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-    res = await db.payment_requests.insert_one(doc)
-    await log_audit(user["id"], "request_payment", "invoice", invoice_id)
-    new_req = await db.payment_requests.find_one({"_id": res.inserted_id})
-    return serialize_doc(new_req)
-
-
-@router.get("/admin/payment-requests")
-async def list_payment_requests(user: dict = Depends(require_staff)):
-    reqs = await db.payment_requests.find({}).sort("created_at", -1).to_list(1000)
-    return serialize_list(reqs)
-
-
-@router.post("/admin/payment-requests/{request_id}/send-link")
-async def send_payment_link(request_id: str, payload: PaymentRequestSendLink, user: dict = Depends(require_staff)):
-    req = await db.payment_requests.find_one({"_id": to_object_id(request_id)})
-    if not req:
-        raise HTTPException(status_code=404, detail="Payment request not found")
-
-    invoice = await db.invoices.find_one({"_id": to_object_id(req["invoice_id"])})
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-
-    recipient_email = None
-    portal_user = await db.users.find_one({"role": "client", "client_id": req["client_id"]})
-    if portal_user:
-        recipient_email = portal_user["email"]
-    else:
-        contact = await db.contacts.find_one({"client_id": req["client_id"], "email": {"$ne": None}})
-        if contact:
-            recipient_email = contact.get("email")
-
-    if not recipient_email:
-        raise HTTPException(
-            status_code=400,
-            detail="Client email not found. Please ensure the client has portal access or a contact email."
-        )
-
-    await send_payment_link_email(
-        to_email=recipient_email,
-        invoice_number=req["invoice_number"],
-        total=req["amount"],
-        payment_link=payload.payment_link,
-        currency=req.get("currency", "INR")
-    )
-
-    now = datetime.now(timezone.utc).isoformat()
-    await db.payment_requests.update_one(
-        {"_id": req["_id"]},
-        {"$set": {"status": "sent", "payment_link": payload.payment_link, "updated_at": now}}
-    )
-
-    await db.invoices.update_one(
-        {"_id": invoice["_id"]},
-        {"$set": {
-            "payment_link": payload.payment_link,
-            "status": "sent",
-            "updated_at": now,
-        }}
-    )
-
-    await log_audit(user["id"], "send_payment_link", "payment_request", request_id)
-
-    updated = await db.payment_requests.find_one({"_id": req["_id"]})
-    return serialize_doc(updated)
