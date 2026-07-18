@@ -92,3 +92,6 @@ frontend/node_modules/.cache/default-development/12.pack
 credentials.json
 *.key
 .credentials
+
+# Purge backups contain client and invoice data
+backend/backups/
