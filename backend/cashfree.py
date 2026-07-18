@@ -193,3 +193,93 @@ def verify_webhook(raw_body: bytes, signature: str, timestamp: str) -> bool:
         return hmac.compare_digest(expected, signature)
     except Exception:
         return False
+
+# Field names Cashfree may use for the FX rate applied to an international
+# payment. The exact key is not documented consistently across products, so we
+# probe several and fall back to deriving it from the settled amounts.
+_RATE_KEYS = ("exchange_rate", "conversion_rate", "fx_rate", "settlement_rate",
+              "payment_exchange_rate")
+_SETTLED_KEYS = ("settlement_amount", "settled_amount", "payment_settlement_amount")
+_CHARGED_KEYS = ("payment_amount", "order_amount", "amount")
+
+
+def _extract_rate(payload: dict) -> Optional[float]:
+    """Pull an FX rate out of a payment/order record, or derive it.
+
+    Returns None rather than guessing when nothing usable is present.
+    """
+    if not isinstance(payload, dict):
+        return None
+
+    for key in _RATE_KEYS:
+        val = payload.get(key)
+        try:
+            if val and float(val) > 0:
+                return float(val)
+        except (TypeError, ValueError):
+            continue
+
+    # Derive: settled INR / charged foreign currency.
+    settled = next((payload.get(k) for k in _SETTLED_KEYS if payload.get(k)), None)
+    charged = next((payload.get(k) for k in _CHARGED_KEYS if payload.get(k)), None)
+    try:
+        if settled and charged and float(charged) > 0:
+            rate = float(settled) / float(charged)
+            # Sanity-check: a USD→INR rate outside this band means we picked up
+            # two amounts in the same currency, not a conversion.
+            if 1.5 < rate < 500:
+                return rate
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass
+    return None
+
+
+async def fetch_settlement_rate(link_id: str) -> Optional[float]:
+    """The FX rate Cashfree actually applied to a paid link.
+
+    Only knowable after payment — Cashfree exposes no pre-payment quote — so
+    callers use a live feed as the estimate and correct it with this once the
+    money has moved. Returns None if the rate cannot be determined; the caller
+    keeps its estimate rather than recording a wrong number.
+    """
+    if not is_configured():
+        return None
+    try:
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(
+                f"{base_url()}/links/{_safe_link_id(link_id)}/orders",
+                headers=_headers(),
+            ) as resp:
+                if resp.status >= 400:
+                    return None
+                orders = await resp.json(content_type=None)
+            if not isinstance(orders, list):
+                return None
+
+            for order in orders:
+                rate = _extract_rate(order)
+                if rate:
+                    return rate
+                order_id = order.get("order_id")
+                if not order_id:
+                    continue
+                async with session.get(
+                    f"{base_url()}/orders/{order_id}/payments", headers=_headers()
+                ) as presp:
+                    if presp.status >= 400:
+                        continue
+                    payments = await presp.json(content_type=None)
+                for payment in payments if isinstance(payments, list) else []:
+                    rate = _extract_rate(payment)
+                    if rate:
+                        return rate
+                    # Nothing matched — record the shape (keys only, no values)
+                    # so the first real settlement pins the field down.
+                    logger.info(
+                        "Cashfree payment had no recognisable FX field; keys=%s",
+                        sorted(payment.keys()) if isinstance(payment, dict) else type(payment),
+                    )
+    except Exception as exc:
+        logger.info("Could not read Cashfree settlement rate: %s", exc)
+    return None

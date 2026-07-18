@@ -43,7 +43,12 @@ export function useFxRate(currency = "USD", { enabled = true } = {}) {
   return { ...state, refresh: () => fetchRate(true) };
 }
 
-/** One-line provenance for a rate, e.g. "1 USD = ₹96.28 · frankfurter". */
+/**
+ * One-line provenance for a rate, e.g. "1 USD = ₹96.28 · frankfurter".
+ * This is an estimate for display and for pinning at issue time; once an
+ * invoice is paid through Cashfree, its stored rate is replaced by the rate
+ * Cashfree actually settled at.
+ */
 export function describeRate(code, { rate, source, stale }) {
   if (!rate || code === "INR") return "";
   const value = Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 });

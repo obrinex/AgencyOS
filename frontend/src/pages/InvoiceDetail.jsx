@@ -80,7 +80,11 @@ export default function InvoiceDetail() {
                   {Number(invoice.conversion_rate || 1).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   {invoice.conversion_rate_source && ` · ${invoice.conversion_rate_source}`}
                 </p>
-                <p className="text-[10px] text-carbon mt-0.5">Rate pinned when the invoice was issued.</p>
+                <p className="text-[10px] text-carbon mt-0.5">
+                  {invoice.conversion_rate_source === "cashfree-settlement"
+                    ? "Actual rate Cashfree settled at."
+                    : "Estimated at issue; replaced by Cashfree's actual rate once paid."}
+                </p>
               </>
             )}
           </div>

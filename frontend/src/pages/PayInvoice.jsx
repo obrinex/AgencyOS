@@ -70,6 +70,7 @@ export default function PayInvoice() {
         <Card className="max-w-md w-full p-8 bg-surface-1 border-white/10 text-center">
           <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-4" />
           <h1 className="font-display text-xl font-bold mb-2">Payment submitted</h1>
+          {info.test_mode && <p className="text-xs text-warning mb-2">Test mode — no real money was taken.</p>}
           <p className="text-sm text-ash">Thanks! {info.agency_name} is verifying your transaction for {info.kind === "link" ? info.invoice_number : `invoice ${info.invoice_number}`}. You'll receive a confirmation once it clears.</p>
         </Card>
       </div>
@@ -91,6 +92,15 @@ export default function PayInvoice() {
   return (
     <div className="min-h-screen bg-background text-foreground p-6 flex justify-center" data-testid="pay-invoice-page">
       <div className="max-w-lg w-full">
+        {info.test_mode && (
+          <div className="mb-5 rounded-lg border border-warning/40 bg-warning/10 p-4 text-center" data-testid="test-mode-banner">
+            <p className="text-sm font-semibold text-warning">Test mode — no real payment will be taken</p>
+            <p className="text-xs text-warning/80 mt-1">
+              This page is connected to Cashfree&rsquo;s sandbox. Card and UPI details entered here are
+              not charged and no money moves. Do not use this to settle a real invoice.
+            </p>
+          </div>
+        )}
         <div className="text-center mb-8 mt-6">
           <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background font-display font-bold">
             {(info.agency_name || "O")[0]}

@@ -113,6 +113,9 @@ async def get_public_payment_page(token: str):
             "client_name": (client or {}).get("company_name"),
             "agency_name": agency_name,
             "payment_link": await _ensure_cashfree_link(doc, "invoice"),
+            # Sandbox links look exactly like live ones but move no money, so
+            # the page must say so outright.
+            "test_mode": cashfree.is_configured() and cashfree.environment() == "sandbox",
             # Crypto is preferred for USD (no FX spread, no card fees) and
             # Cashfree for INR. The page opens on whichever this names.
             "preferred_method": _preferred_method(doc.get("currency"), wallets),
@@ -131,6 +134,7 @@ async def get_public_payment_page(token: str):
         "agency_name": agency_name,
         "note": doc.get("note"),
         "payment_link": await _ensure_cashfree_link(doc, "link"),
+        "test_mode": cashfree.is_configured() and cashfree.environment() == "sandbox",
         "preferred_method": _preferred_method(doc.get("currency"), wallets),
         "wallets": wallets,
         "payment_claimed": bool(doc.get("payment_claim")),
@@ -178,6 +182,27 @@ async def _mark_paid(kind: str, doc_id, label: str) -> None:
     )
     if result.modified_count == 0:
         return  # already settled — do not notify twice
+
+    # Replace the estimated FX rate with the one Cashfree actually applied.
+    # The live feed is only ever an estimate; what the business received is
+    # whatever Cashfree converted at, so that is what the books should show.
+    doc = await coll.find_one({"_id": doc_id})
+    currency = (doc or {}).get("currency", "INR")
+    link_id = (doc or {}).get("cashfree_link_id")
+    if currency and currency.upper() != "INR" and link_id:
+        rate = await cashfree.fetch_settlement_rate(link_id)
+        if rate:
+            await coll.update_one(
+                {"_id": doc_id},
+                {"$set": {"conversion_rate": rate,
+                          "conversion_rate_source": "cashfree-settlement"}},
+            )
+            logger.info("Applied Cashfree settlement rate %s to %s", rate, label)
+        else:
+            # Keep the estimate rather than record a number we cannot stand behind.
+            logger.warning(
+                "No Cashfree settlement rate for %s; keeping the estimated rate", label
+            )
 
     admin_link = f"/invoices/{doc_id}" if kind == "invoice" else "/payment-links"
     admins = await db.users.find({"role": "admin"}).to_list(20)
