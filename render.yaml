@@ -23,10 +23,6 @@ services:
         generateValue: true
       - key: VAULT_ENCRYPTION_KEY
         sync: false
-      - key: CRON_SECRET
-        generateValue: true
-      - key: RUN_BACKGROUND_LOOPS
-        value: "false"
       - key: FRONTEND_URL
         sync: false
       - key: CORS_ORIGINS
@@ -45,18 +41,3 @@ services:
         sync: false
       - key: NVIDIA_MODEL
         value: meta/llama-3.1-70b-instruct
-      # Cashfree Payments — set both keys in the Render dashboard (sync: false
-      # keeps secrets out of this file and out of git).
-      - key: CASHFREE_APP_ID
-        sync: false
-      - key: CASHFREE_SECRET_KEY
-        sync: false
-      - key: CASHFREE_ENV
-        value: production
-      # Public URL of this service, so Cashfree can deliver payment webhooks to
-      # <BACKEND_URL>/api/public/cashfree/webhook
-      - key: BACKEND_URL
-        sync: false
-      # Only used if every live FX feed and the cached rate are unavailable.
-      - key: FX_FALLBACK_USD_INR
-        value: "88"
