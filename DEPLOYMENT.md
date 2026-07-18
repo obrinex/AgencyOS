@@ -52,8 +52,31 @@ and `ADMIN_PASSWORD`. It never changes an existing password during startup.
    | `STRIPE_API_KEY` | (optional) invoice payments |
    | `CASHFREE_APP_ID` | Cashfree client id — card/UPI/net banking |
    | `CASHFREE_SECRET_KEY` | Cashfree client secret (also verifies webhooks) |
-   | `CASHFREE_ENV` | `sandbox` or `production` (default `sandbox`) |
+   | `CASHFREE_ENV` | `sandbox` or `production` (must match the key pair) |
    | `BACKEND_URL` | Public URL of this backend, so Cashfree can reach the webhook |
+   | `FX_FALLBACK_USD_INR` | Only used if every live FX feed *and* the cached rate fail |
+
+### Payments on serverless (Vercel)
+
+The backend runs as a Vercel function, so there is no long-lived process and
+`reminder_loop()` never executes in production. Anything periodic must be
+driven by `crons` in `backend/vercel.json`:
+
+| Cron | Schedule | Does |
+|---|---|---|
+| `/api/automations/cron/daily` | `30 2 * * *` | overdue chasing, recurring invoices, digest |
+| `/api/automations/cron/reminders` | `0 * * * *` | meeting reminders **+ Cashfree reconciliation** |
+
+Reconciliation matters because webhook delivery is best-effort: if Cashfree's
+callback is lost, only this sweep (or the payer reopening the payment page)
+will notice the invoice was actually paid.
+
+**Vercel cron frequency is plan-limited** — Hobby allows roughly one run per
+day, so the hourly schedule above needs Pro. On Hobby the webhook remains the
+primary path and reconciliation degrades to daily.
+
+Set `CRON_SECRET` in the backend project; the cron endpoints reject any call
+without it.
    | transactional email key / `SENDER_EMAIL` | required for invoice and password-reset emails |
    | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | (optional) Calendar sync |
 6. Under **Settings → Custom Domains** add `api.obrinex.space`, then create
