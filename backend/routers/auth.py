@@ -12,7 +12,7 @@ from auth_utils import (
     set_auth_cookies, clear_auth_cookies, get_current_user, require_admin,
     check_brute_force, record_failed_attempt, clear_attempts, log_audit,
     generate_totp_secret, totp_uri, verify_totp, get_jwt_secret, JWT_ALGORITHM,
-    COOKIE_SECURE, COOKIE_SAMESITE,
+    COOKIE_SECURE, COOKIE_SAMESITE, ACCESS_EXPIRE_MIN,
 )
 from email_service import send_password_reset_email
 
@@ -72,6 +72,7 @@ async def login(payload: LoginRequest, request: Request, response: Response):
     u = serialize_doc(user)
     u.pop("password_hash", None)
     u.pop("two_fa_secret", None)
+    u["access_token"] = access_token
     return u
 
 
@@ -96,6 +97,7 @@ async def two_fa_login(payload: TwoFALoginRequest, request: Request, response: R
     u = serialize_doc(user)
     u.pop("password_hash", None)
     u.pop("two_fa_secret", None)
+    u["access_token"] = access_token
     return u
 
 
@@ -127,8 +129,16 @@ async def refresh(request: Request, response: Response):
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     new_access = create_access_token(str(user["_id"]), user["email"], user["role"])
-    response.set_cookie(key="access_token", value=new_access, httponly=True, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE, max_age=900, path="/")
-    return {"message": "Refreshed"}
+    response.set_cookie(
+        key="access_token",
+        value=new_access,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=ACCESS_EXPIRE_MIN * 60,
+        path="/",
+    )
+    return {"message": "Refreshed", "access_token": new_access}
 
 
 @router.post("/forgot-password")

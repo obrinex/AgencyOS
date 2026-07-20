@@ -6,7 +6,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from database import db, serialize_doc, serialize_list, to_object_id
-from auth_utils import get_current_user, require_staff, require_admin, log_audit
+from auth_utils import get_current_user, require_staff, require_admin, log_audit, require_module
+require_vault = require_module("vault")
 
 router = APIRouter(prefix="/api/vault", tags=["vault"])
 
@@ -34,7 +35,7 @@ class VaultEntryUpdate(BaseModel):
 
 
 @router.get("")
-async def list_entries(client_id: Optional[str] = None, user: dict = Depends(require_staff)):
+async def list_entries(client_id: Optional[str] = None, user: dict = Depends(require_vault)):
     query = {}
     if client_id:
         query["client_id"] = client_id
@@ -49,7 +50,7 @@ async def list_entries(client_id: Optional[str] = None, user: dict = Depends(req
 
 
 @router.post("")
-async def create_entry(payload: VaultEntryCreate, user: dict = Depends(require_staff)):
+async def create_entry(payload: VaultEntryCreate, user: dict = Depends(require_vault)):
     cipher = get_cipher()
     now = datetime.now(timezone.utc).isoformat()
     doc = payload.model_dump()
@@ -66,7 +67,7 @@ async def create_entry(payload: VaultEntryCreate, user: dict = Depends(require_s
 
 
 @router.put("/{entry_id}")
-async def update_entry(entry_id: str, payload: VaultEntryUpdate, user: dict = Depends(require_staff)):
+async def update_entry(entry_id: str, payload: VaultEntryUpdate, user: dict = Depends(require_vault)):
     updates = {k: v for k, v in payload.model_dump().items() if v is not None and k != "password"}
     if payload.password:
         cipher = get_cipher()
@@ -83,7 +84,7 @@ async def update_entry(entry_id: str, payload: VaultEntryUpdate, user: dict = De
 
 
 @router.post("/{entry_id}/reveal")
-async def reveal_password(entry_id: str, user: dict = Depends(require_staff)):
+async def reveal_password(entry_id: str, user: dict = Depends(require_vault)):
     entry = await db.vault_entries.find_one({"_id": to_object_id(entry_id)})
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")

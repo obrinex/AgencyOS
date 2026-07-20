@@ -54,6 +54,11 @@ async def create_indexes():
     await db.audit_logs.create_index("created_at")
     await db.counters.create_index("name", unique=True)
 
+    # AI SDR module. Imported here rather than at module scope because
+    # sdr.collections imports `db` from this file.
+    from sdr.collections import create_sdr_indexes
+    await create_sdr_indexes()
+
 
 async def next_counter(name: str) -> int:
     doc = await db.counters.find_one_and_update(

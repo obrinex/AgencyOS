@@ -1,6 +1,11 @@
 export const STAGE_CONFIG = {
   prospect: { label: "Prospect", color: "graphite" },
   contacted: { label: "Contacted", color: "info" },
+  // Added for the AI SDR pipeline. It must live here rather than only in the
+  // SDR module: CRMPipeline groups by STAGES_LIST and silently drops leads in
+  // an unknown stage (crm/CRMPipeline.jsx:53), so a lead that reached
+  // "interested" would vanish from the board.
+  interested: { label: "Interested", color: "info" },
   qualified: { label: "Qualified", color: "info" },
   discovery: { label: "Discovery", color: "info" },
   meeting_scheduled: { label: "Meeting Scheduled", color: "warning" },

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, FolderKanban, LayoutGrid, List as ListIcon, GanttChartSquare } from "lucide-react";
+import { Plus, FolderKanban, LayoutGrid, List as ListIcon, GanttChartSquare, Trash2 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -26,8 +26,20 @@ export default function Projects() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+
+  const confirmDelete = async () => {
+    try {
+      await api.delete(`/projects/${deleteTarget.id}`);
+      toast.success(`Project "${deleteTarget.name}" deleted`);
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
 
   const load = async () => {
     const [p, c] = await Promise.all([api.get("/projects"), api.get("/clients")]);
@@ -105,16 +117,39 @@ export default function Projects() {
       ) : (
         <div className="space-y-2" data-testid="projects-list">
           {projects.map((p) => (
-            <Card key={p.id} onClick={() => navigate(`/projects/${p.id}`)} data-testid={`project-row-${p.id}`} className="p-4 bg-surface-1 border-white/10 cursor-pointer hover:border-white/25 flex items-center justify-between gap-4">
+            <Card key={p.id} onClick={() => navigate(`/projects/${p.id}`)} data-testid={`project-row-${p.id}`} className="p-4 bg-surface-1 border-white/10 cursor-pointer hover:border-white/25 flex items-center justify-between gap-4 group">
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{p.name}</p>
                 <p className="text-xs text-graphite">{p.tasks_count} tasks · {p.progress || 0}% complete</p>
               </div>
               <StatusBadge config={PROJECT_STATUS_CONFIG} value={p.status} />
+              <button
+                data-testid={`delete-project-${p.id}`}
+                onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }}
+                className="text-graphite hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                title="Delete project"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
             </Card>
           ))}
         </div>
       )}
+
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="bg-surface-1 border-white/10" data-testid="delete-project-dialog">
+          <DialogHeader>
+            <DialogTitle>Delete project?</DialogTitle>
+            <DialogDescription>
+              This permanently deletes <span className="text-foreground font-medium">{deleteTarget?.name}</span> along with its tasks, milestones, and logged time. This can't be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" className="border-white/10" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" data-testid="confirm-delete-project-list-btn" onClick={confirmDelete}>Delete Project</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="bg-surface-1 border-white/10" data-testid="create-project-dialog">

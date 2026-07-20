@@ -127,7 +127,12 @@ async def share_proposal_email(proposal_id: str, payload: ShareEmailRequest, use
         proposal["share_token"] = token
     if proposal["status"] == "draft":
         await db.proposals.update_one({"_id": proposal["_id"]}, {"$set": {"status": "sent"}})
-    await send_proposal_share_email(payload.email, proposal["title"], proposal["share_token"])
+    pdf_bytes = None
+    try:
+        pdf_bytes = await build_proposal_pdf_bytes(proposal)
+    except Exception:
+        pass  # never block the share email on PDF rendering
+    await send_proposal_share_email(payload.email, proposal["title"], proposal["share_token"], pdf_bytes=pdf_bytes)
     await log_audit(user["id"], "share_proposal", "proposal", proposal_id)
     return {"message": "Proposal shared", "share_token": proposal["share_token"]}
 
@@ -172,8 +177,94 @@ async def delete_contract(contract_id: str, user: dict = Depends(require_staff))
     return {"message": "Contract deleted"}
 
 
-async def build_agreement_pdf(contract: dict):
-    """Render an agreement PDF for a contract document. Returns a StreamingResponse."""
+def _proposal_pdf_bytes(proposal: dict, agency_name: str, client_name: str = None) -> bytes:
+    """Render a proposal's markdown-ish content into a clean PDF."""
+    import io
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from xml.sax.saxutils import escape
+    import re as _re
+
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=styles["Title"], fontSize=18, spaceAfter=4)
+    meta = ParagraphStyle("meta", parent=styles["Normal"], fontSize=9, textColor=colors.grey)
+    sec = ParagraphStyle("sec", parent=styles["Heading2"], fontSize=13, spaceBefore=14, spaceAfter=4)
+    sub = ParagraphStyle("sub", parent=styles["Heading3"], fontSize=11, spaceBefore=10, spaceAfter=3)
+    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=15, spaceAfter=4)
+    bullet = ParagraphStyle("bullet", parent=body, leftIndent=14, bulletIndent=4)
+
+    def fmt(text):
+        text = escape(text)
+        text = _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+        text = _re.sub(r"\*(.+?)\*", r"<i>\1</i>", text)
+        return text
+
+    story = [
+        Paragraph("PROPOSAL", meta),
+        Paragraph(fmt(proposal.get("title", "Proposal")), h1),
+        Paragraph(f"Prepared by {agency_name}" + (f" for {client_name}" if client_name else "") +
+                  f" · {datetime.now(timezone.utc).strftime('%B %d, %Y')}", meta),
+        Spacer(1, 6),
+        HRFlowable(width="100%", thickness=1, color=colors.black),
+        Spacer(1, 8),
+    ]
+    for line in (proposal.get("content") or "").split("\n"):
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("### "):
+            story.append(Paragraph(fmt(s[4:]), sub))
+        elif s.startswith("## "):
+            story.append(Paragraph(fmt(s[3:]), sec))
+        elif s.startswith("# "):
+            story.append(Paragraph(fmt(s[2:]), sec))
+        elif s.startswith(("- ", "* ")):
+            story.append(Paragraph(fmt(s[2:]), bullet, bulletText="•"))
+        else:
+            story.append(Paragraph(fmt(s), body))
+
+    if proposal.get("status") == "accepted" and proposal.get("signature_name"):
+        story += [Spacer(1, 16), HRFlowable(width="100%", thickness=0.5, color=colors.grey),
+                  Paragraph(f"Accepted by {proposal['signature_name']} on {(proposal.get('signed_at') or '')[:10]}", meta)]
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=20 * mm, bottomMargin=20 * mm,
+                            title=proposal.get("title", "Proposal"))
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+async def build_proposal_pdf_bytes(proposal: dict) -> bytes:
+    company = await db.company_settings.find_one({"key": "main"})
+    client_name = None
+    if proposal.get("client_id"):
+        client = await db.clients.find_one({"_id": to_object_id(proposal["client_id"])})
+        client_name = (client or {}).get("company_name")
+    elif proposal.get("lead_id"):
+        lead = await db.leads.find_one({"_id": to_object_id(proposal["lead_id"])})
+        client_name = (lead or {}).get("company")
+    return _proposal_pdf_bytes(proposal, (company or {}).get("company_name") or "Obrinex", client_name)
+
+
+@router.get("/proposals/{proposal_id}/pdf")
+async def proposal_pdf(proposal_id: str, user: dict = Depends(get_current_user)):
+    from fastapi.responses import StreamingResponse
+    import io
+    proposal = await db.proposals.find_one({"_id": to_object_id(proposal_id)})
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    pdf = await build_proposal_pdf_bytes(proposal)
+    safe = "".join(ch if ch.isalnum() or ch in "-_ " else "" for ch in proposal.get("title", "proposal")).strip().replace(" ", "_") or "proposal"
+    return StreamingResponse(io.BytesIO(pdf), media_type="application/pdf",
+                             headers={"Content-Disposition": f"attachment; filename={safe}.pdf"})
+
+
+async def build_agreement_pdf_bytes(contract: dict):
+    """Render an agreement PDF for a contract document. Returns (bytes, safe_filename)."""
     import io
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -266,8 +357,16 @@ async def build_agreement_pdf(contract: dict):
     doc.build(story)
     buf.seek(0)
     safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "" for ch in contract.get("title", "agreement")).strip().replace(" ", "_") or "agreement"
+    return buf.getvalue(), safe_name
+
+
+async def build_agreement_pdf(contract: dict):
+    """StreamingResponse wrapper around build_agreement_pdf_bytes (used by download endpoints)."""
+    import io
     from fastapi.responses import StreamingResponse
-    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={safe_name}.pdf"})
+    pdf, safe_name = await build_agreement_pdf_bytes(contract)
+    return StreamingResponse(io.BytesIO(pdf), media_type="application/pdf",
+                             headers={"Content-Disposition": f"attachment; filename={safe_name}.pdf"})
 
 
 @router.get("/contracts/{contract_id}/pdf")
@@ -293,7 +392,12 @@ async def share_contract(contract_id: str, payload: Optional[ShareContractReques
         await db.contracts.update_one({"_id": contract["_id"]}, {"$set": {"status": "sent"}})
     if payload and payload.email:
         from email_service import send_agreement_share_email
-        await send_agreement_share_email(payload.email, contract["title"], token)
+        pdf_bytes = None
+        try:
+            pdf_bytes, _ = await build_agreement_pdf_bytes(contract)
+        except Exception:
+            pass
+        await send_agreement_share_email(payload.email, contract["title"], token, pdf_bytes=pdf_bytes)
     await log_audit(user["id"], "share_contract", "contract", contract_id)
     return {"share_token": token}
 

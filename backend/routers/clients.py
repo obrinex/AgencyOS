@@ -6,7 +6,6 @@ from pydantic import BaseModel, EmailStr
 
 from database import db, serialize_doc, serialize_list, to_object_id
 from auth_utils import get_current_user, require_staff, require_admin, hash_password, log_audit
-from email_service import send_welcome_email
 from finance_utils import to_base
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
@@ -139,7 +138,7 @@ async def delete_portal_user(client_id: str, user: dict = Depends(require_admin)
         await db.clients.update_one({"_id": client["_id"]}, {"$set": {
             "portal_user_id": None,
             "portal_login_email": None,
-        }})
+        }, "$unset": {"portal_temp_password": "", "portal_password_updated_at": ""}})
     await log_audit(user["id"], "revoke_portal_access", "client", client_id)
     return {"message": "Portal access revoked"}
 
@@ -181,10 +180,15 @@ async def create_portal_user(client_id: str, payload: PortalUserCreate, user: di
     await db.clients.update_one({"_id": client["_id"]}, {"$set": {
         "portal_user_id": str(res.inserted_id),
         "portal_login_email": payload.email.lower(),
+        "portal_temp_password": temp_password,
+        "portal_password_updated_at": now,
     }})
     await log_audit(user["id"], "create_portal_user", "client", client_id)
-    await send_welcome_email(payload.email, payload.name, temp_password)
-    return {"email": payload.email, "temp_password": temp_password, "message": "Portal user created. Welcome email sent (or logged if email is not configured)."}
+    return {
+        "email": payload.email,
+        "temp_password": temp_password,
+        "message": "Portal user created. Share these credentials with the client from AgencyOS."
+    }
 
 
 @router.get("/{client_id}/portal-user")
@@ -200,6 +204,8 @@ async def get_portal_user_credentials(client_id: str, user: dict = Depends(requi
     return {
         "email": client.get("portal_login_email") or portal_user.get("email"),
         "name": portal_user.get("name"),
+        "temp_password": client.get("portal_temp_password"),
+        "password_updated_at": client.get("portal_password_updated_at"),
     }
 
 
@@ -215,6 +221,7 @@ async def reset_portal_user_password(client_id: str, user: dict = Depends(requir
         raise HTTPException(status_code=404, detail="Portal user not found")
 
     temp_password = secrets.token_urlsafe(8)
+    now = datetime.now(timezone.utc).isoformat()
     await db.users.update_one(
         {"_id": portal_user["_id"]},
         {"$set": {"password_hash": hash_password(temp_password)}}
@@ -223,13 +230,15 @@ async def reset_portal_user_password(client_id: str, user: dict = Depends(requir
         {"_id": client["_id"]},
         {"$set": {
             "portal_login_email": portal_user["email"],
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }, "$unset": {"portal_temp_password": ""}}
+            "portal_temp_password": temp_password,
+            "portal_password_updated_at": now,
+            "updated_at": now,
+        }}
     )
     await log_audit(user["id"], "reset_portal_user_password", "client", client_id)
-    await send_welcome_email(portal_user["email"], portal_user.get("name", "Client"), temp_password)
     return {
         "email": portal_user["email"],
         "temp_password": temp_password,
-        "message": "Portal password reset. The new credentials have been emailed to the client."
+        "password_updated_at": now,
+        "message": "Portal password reset. Share these credentials with the client from AgencyOS."
     }

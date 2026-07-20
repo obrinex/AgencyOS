@@ -1,7 +1,9 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "CI=false npm run build",
   "outputDirectory": "build",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api", "destination": "/api/proxy?path=" },
+    { "source": "/api/(.*)", "destination": "/api/proxy?path=$1" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

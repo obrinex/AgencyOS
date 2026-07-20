@@ -473,3 +473,276 @@ async def sign_public_proposal(token: str, payload: ProposalSignRequest):
     }})
     updated = await db.proposals.find_one({"_id": proposal["_id"]})
     return serialize_doc(updated)
+
+
+# --- AI SDR one-click unsubscribe ---------------------------------------------
+#
+# Unauthenticated by necessity: it is reached from a link in an email, and
+# Gmail/Yahoo's one-click POST carries no session. The signed token is what
+# stops it being used to suppress an arbitrary third party by editing the
+# address in the URL.
+
+@router.get("/sdr/unsubscribe")
+async def unsubscribe_page(email: str, token: str):
+    """Human-facing confirmation page. GET must not mutate anything.
+
+    Mail clients and security scanners prefetch links; unsubscribing on GET
+    would opt people out who never clicked. This renders a real HTML page -
+    the person arriving here clicked a footer link in an email, and handing
+    them raw JSON reads as a broken site at the worst possible moment.
+    """
+    from fastapi.responses import HTMLResponse
+    from html import escape
+
+    from sdr.repositories import suppression as sdr_suppression
+
+    if not sdr_suppression.verify_unsubscribe_token(email, token):
+        raise HTTPException(status_code=400, detail="This unsubscribe link is not valid.")
+
+    existing = await sdr_suppression.is_suppressed(email=email)
+    safe_email = escape(email, quote=True)
+    safe_token = escape(token, quote=True)
+
+    if existing:
+        inner = (
+            "<h1>You're already unsubscribed</h1>"
+            f"<p><strong>{safe_email}</strong> will not be contacted again, "
+            "on any channel, permanently.</p>"
+        )
+    else:
+        inner = (
+            "<h1>Unsubscribe</h1>"
+            f"<p>Stop all email to <strong>{safe_email}</strong>? "
+            "This takes effect immediately and is permanent.</p>"
+            f'<form method="post" action="/api/public/sdr/unsubscribe'
+            f'?email={safe_email}&amp;token={safe_token}">'
+            '<button type="submit">Yes, unsubscribe me</button></form>'
+        )
+
+    page = (
+        "<title>Unsubscribe</title>"
+        '<div style="min-height:100vh;display:flex;align-items:center;'
+        'justify-content:center;background:#131315;color:#F4F4F5;'
+        "font-family:Arial,Helvetica,sans-serif\">"
+        '<div style="max-width:420px;padding:32px;border:1px solid #2D2D30;'
+        'border-radius:12px;background:#18181A;text-align:center">'
+        + inner.replace(
+            "<button ",
+            '<button style="margin-top:12px;padding:10px 22px;border:0;'
+            'border-radius:8px;background:#EF4444;color:#fff;font-size:15px;'
+            'cursor:pointer" ',
+        )
+        + '<p style="color:#85858C;font-size:12px;margin-top:18px">'
+        "If you did not expect this page, you can simply close it - "
+        "nothing happens without the button.</p></div></div>"
+    )
+    return HTMLResponse(page)
+
+
+@router.post("/sdr/unsubscribe")
+async def unsubscribe(request: Request, email: str, token: str):
+    """Honour an opt-out immediately, across every channel and campaign.
+
+    Idempotent: the unique index makes a repeat a no-op rather than a 500 on
+    a public endpoint that mail providers may retry.
+    """
+    from sdr.repositories import suppression as sdr_suppression
+
+    if not sdr_suppression.verify_unsubscribe_token(email, token):
+        raise HTTPException(status_code=400, detail="This unsubscribe link is not valid.")
+
+    await sdr_suppression.suppress(
+        value=email, value_type="email", reason="unsubscribe", source="one_click",
+    )
+    # The consent trail is what DPDP and GDPR actually require on request:
+    # when and how someone opted out, not merely that they are on a list now.
+    await sdr_suppression.record_consent(
+        action="opt_out", value=email, channel="email", legal_basis="withdrawal",
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        evidence={"method": "one_click_list_unsubscribe"},
+    )
+
+    # Stop any queued outreach to this address in the same breath. Suppression
+    # already blocks the send, but leaving the jobs queued means they churn
+    # through retries being refused.
+    await db.sdr_jobs.update_many(
+        {"status": "queued", "payload.recipient_email": email.strip().lower()},
+        {"$set": {"status": "cancelled", "last_error": {
+            "type": "Unsubscribed", "message": "Recipient unsubscribed",
+        }}},
+    )
+
+    # Two callers land here: Gmail's one-click POST (machine - JSON is right)
+    # and the confirmation form on the GET page (human - JSON reads as a
+    # broken site). The Accept header tells them apart.
+    if "text/html" in (request.headers.get("accept") or ""):
+        from fastapi.responses import HTMLResponse
+        from html import escape
+
+        return HTMLResponse(
+            "<title>Unsubscribed</title>"
+            '<div style="min-height:100vh;display:flex;align-items:center;'
+            'justify-content:center;background:#131315;color:#F4F4F5;'
+            "font-family:Arial,Helvetica,sans-serif\">"
+            '<div style="max-width:420px;padding:32px;border:1px solid #2D2D30;'
+            'border-radius:12px;background:#18181A;text-align:center">'
+            "<h1>Done</h1>"
+            f"<p><strong>{escape(email, quote=True)}</strong> is unsubscribed, "
+            "effective immediately and permanently. Sorry to have bothered you.</p>"
+            "</div></div>"
+        )
+    return {"unsubscribed": True, "email": email}
+
+
+@router.post("/sdr/webhooks/resend")
+async def resend_webhook(request: Request):
+    """Delivery, bounce and complaint events from Resend.
+
+    Signature-verified (svix HMAC) with the same posture as the Cashfree
+    webhook: a payload we cannot verify is a payload we do not act on. With
+    no RESEND_WEBHOOK_SECRET configured this returns 503 rather than
+    trusting the network - a forged "complained" event would suppress an
+    arbitrary address permanently.
+    """
+    import base64
+    import hashlib
+    import hmac as hmac_mod
+    import os
+    import time as time_mod
+
+    secret = os.environ.get("RESEND_WEBHOOK_SECRET", "")
+    if not secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Webhook signing is not configured (RESEND_WEBHOOK_SECRET).",
+        )
+
+    body = await request.body()
+    svix_id = request.headers.get("svix-id", "")
+    svix_timestamp = request.headers.get("svix-timestamp", "")
+    svix_signature = request.headers.get("svix-signature", "")
+    if not (svix_id and svix_timestamp and svix_signature):
+        raise HTTPException(status_code=401, detail="Missing signature headers")
+
+    # Freshness: a replayed webhook older than 5 minutes is refused.
+    try:
+        age = abs(time_mod.time() - int(svix_timestamp))
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Bad timestamp")
+    if age > 300:
+        raise HTTPException(status_code=401, detail="Stale webhook")
+
+    key = base64.b64decode(secret.split("_", 1)[-1])
+    signed = f"{svix_id}.{svix_timestamp}.".encode() + body
+    expected = base64.b64encode(
+        hmac_mod.new(key, signed, hashlib.sha256).digest()
+    ).decode()
+    candidates = [
+        part.split(",", 1)[-1] for part in svix_signature.split(" ") if part
+    ]
+    if not any(hmac_mod.compare_digest(expected, candidate) for candidate in candidates):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    payload = json.loads(body)
+    event_type = payload.get("type", "")
+    data = payload.get("data") or {}
+    provider_id = data.get("email_id") or data.get("id")
+
+    from sdr.repositories import campaigns as sdr_campaigns
+    from sdr.repositories import identities as sdr_identities
+    from sdr.repositories import suppression as sdr_suppression
+
+    message = await sdr_campaigns.find_by_provider_id(provider_id)
+    if not message:
+        # Not ours (an invoice email, or a message we never recorded).
+        # Acknowledged so the provider stops retrying.
+        return {"received": True, "matched": False}
+
+    to_email = message.get("to_email")
+    identity = message.get("identity")
+
+    if event_type == "email.delivered":
+        # Statuses only move forward: a late "delivered" after a bounce
+        # or complaint must not resurrect the message.
+        if message["status"] == "sent":
+            await sdr_campaigns.update_message(message["id"], {"status": "delivered"})
+            await sdr_campaigns.bump_stat(message["campaign_id"], "delivered")
+
+    elif event_type == "email.bounced":
+        await sdr_campaigns.update_message(message["id"], {"status": "bounced"})
+        await sdr_campaigns.bump_stat(message["campaign_id"], "bounced")
+        await sdr_suppression.suppress(
+            value=to_email, reason="bounce", source="resend_webhook",
+        )
+        if identity:
+            await sdr_identities.record_outcome(identity, bounced=1)
+        if message.get("enrollment_id"):
+            await sdr_campaigns.stop_enrollment(message["enrollment_id"], "bounced")
+
+    elif event_type == "email.complained":
+        await sdr_campaigns.update_message(message["id"], {"status": "complained"})
+        await sdr_suppression.suppress(
+            value=to_email, reason="complaint", source="resend_webhook",
+        )
+        await sdr_suppression.record_consent(
+            action="opt_out", value=to_email, channel="email",
+            legal_basis="complaint", evidence={"source": "resend_webhook"},
+        )
+        if identity:
+            await sdr_identities.record_outcome(identity, complained=1)
+        if message.get("enrollment_id"):
+            await sdr_campaigns.stop_enrollment(message["enrollment_id"], "unsubscribed")
+
+    return {"received": True, "matched": True, "event": event_type}
+
+
+@router.post("/sdr/webhooks/inbound")
+async def inbound_webhook(request: Request):
+    """Replies, delivered by the Cloudflare Email Routing Worker.
+
+    Same posture as the Resend webhook above, and for a sharper reason: a
+    forged inbound reply stops a live sequence, marks a lead as answered, and
+    can suppress an arbitrary address permanently. So no secret means 503,
+    and a bad signature means 401 - never a best-effort parse.
+
+    Beyond that it always returns 200. The Worker cannot do anything useful
+    with a 500, and a retry storm on a reply we already stored helps nobody;
+    `ingest_key` makes the duplicate delivery a no-op anyway.
+    """
+    from sdr.providers import inbound_cloudflare
+    from sdr.services import inbound as inbound_service
+
+    if not inbound_cloudflare.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Inbound webhook signing is not configured "
+                   "(SDR_INBOUND_WEBHOOK_SECRET).",
+        )
+
+    body = await request.body()
+    ok, reason = inbound_cloudflare.verify(
+        body=body,
+        timestamp=request.headers.get("x-sdr-timestamp", ""),
+        signature=request.headers.get("x-sdr-signature", ""),
+    )
+    if not ok:
+        raise HTTPException(status_code=401, detail=f"Rejected: {reason}")
+
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Body is not valid JSON")
+
+    normalized = inbound_cloudflare.normalize(payload)
+    if not normalized.get("ingest_key"):
+        # Without a stable key a provider retry would be processed twice.
+        raise HTTPException(
+            status_code=400,
+            detail="Inbound message has neither a Message-ID header nor an id.",
+        )
+    if not normalized.get("from_email"):
+        raise HTTPException(status_code=400, detail="Inbound message has no sender")
+
+    result = await inbound_service.ingest(normalized)
+    return {"received": True, **result}

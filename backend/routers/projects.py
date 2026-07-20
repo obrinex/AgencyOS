@@ -128,8 +128,14 @@ async def update_project(project_id: str, payload: ProjectUpdate, user: dict = D
 
 @router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, user: dict = Depends(require_staff)):
-    await db.projects.delete_one({"_id": to_object_id(project_id)})
+    result = await db.projects.delete_one({"_id": to_object_id(project_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Project not found")
+    # Clean up everything attached to the project so no orphaned records remain.
     await db.tasks.delete_many({"related_type": "project", "related_id": project_id})
+    await db.milestones.delete_many({"project_id": project_id})
+    await db.time_entries.delete_many({"project_id": project_id})
+    await log_audit(user["id"], "delete_project", "project", project_id)
     return {"message": "Project deleted"}
 
 

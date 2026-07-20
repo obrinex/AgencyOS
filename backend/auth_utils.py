@@ -7,7 +7,7 @@ from fastapi import Request, HTTPException, Depends
 from database import db, to_object_id, serialize_doc
 
 JWT_ALGORITHM = "HS256"
-ACCESS_EXPIRE_MIN = 15
+ACCESS_EXPIRE_MIN = int(os.environ.get("ACCESS_EXPIRE_MIN", "1440"))
 REFRESH_EXPIRE_DAYS = 7
 
 
@@ -52,7 +52,7 @@ if COOKIE_SAMESITE not in {"lax", "strict", "none"}:
 
 
 def set_auth_cookies(response, access_token: str, refresh_token: str):
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE, max_age=900, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE, max_age=ACCESS_EXPIRE_MIN * 60, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE, max_age=604800, path="/")
 
 
@@ -102,6 +102,29 @@ def require_roles(*roles):
 require_admin = require_roles("admin")
 require_staff = require_roles("admin", "team_member")
 require_client = require_roles("client")
+
+# Modules a team member's access can be limited to. An empty/missing permissions
+# list on a team_member means full access (backward compatible). Admins always pass.
+PERMISSION_MODULES = [
+    "crm", "emails", "documents", "clients", "projects", "support",
+    "calendar", "finance", "knowledge", "vault", "files", "notes", "analytics",
+    "ai_sdr",
+]
+
+
+def require_module(module: str):
+    """Staff-only dependency that also enforces per-member module permissions."""
+    async def checker(user: dict = Depends(get_current_user)):
+        if user["role"] == "admin":
+            return user
+        if user["role"] != "team_member":
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        perms = user.get("permissions") or []
+        if perms and module not in perms:
+            raise HTTPException(status_code=403, detail=f"You don't have access to the {module} module. Ask your admin.")
+        return user
+
+    return checker
 
 
 async def log_audit(user_id: str, action: str, entity_type: str = None, entity_id: str = None, request: Request = None):

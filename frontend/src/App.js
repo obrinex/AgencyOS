@@ -38,6 +38,18 @@ import PublicAgreement from "@/pages/PublicAgreement";
 import LeadCapture from "@/pages/LeadCapture";
 import PublicProject from "@/pages/PublicProject";
 import LeadFinder from "@/pages/LeadFinder";
+import PayInvoice from "@/pages/PayInvoice";
+import Emails from "@/pages/Emails";
+import PaymentLinks from "@/pages/PaymentLinks";
+import SDROverview from "@/pages/sdr/SDROverview";
+import SDRLeads from "@/pages/sdr/SDRLeads";
+import SDRAgents from "@/pages/sdr/SDRAgents";
+import SDRAudits from "@/pages/sdr/SDRAudits";
+import SDRDeliverability from "@/pages/sdr/SDRDeliverability";
+import AIAgentsMonitor from "@/pages/agents/AIAgentsMonitor";
+import SDRCampaigns from "@/pages/sdr/SDRCampaigns";
+import SDROutreach from "@/pages/sdr/SDROutreach";
+import SDRInbox from "@/pages/sdr/SDRInbox";
 
 import PortalDashboard from "@/pages/portal/PortalDashboard";
 import PortalProjects from "@/pages/portal/PortalProjects";
@@ -62,6 +74,7 @@ function App() {
             <Route path="/agreement/:token" element={<PublicAgreement />} />
             <Route path="/start/:slug" element={<LeadCapture />} />
             <Route path="/status/:token" element={<PublicProject />} />
+            <Route path="/pay/:token" element={<PayInvoice />} />
 
             <Route
               element={
@@ -73,6 +86,17 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/crm" element={<CRMPipeline />} />
               <Route path="/lead-finder" element={<LeadFinder />} />
+              <Route path="/ai-sdr" element={<SDROverview />} />
+              <Route path="/ai-sdr/leads" element={<SDRLeads />} />
+              {/* Platform-wide AI monitor: every capability, not just SDR. */}
+              <Route path="/ai-agents" element={<AIAgentsMonitor />} />
+              {/* SDR's own queue/dead-letter view stays where it was. */}
+              <Route path="/ai-sdr/agents" element={<SDRAgents />} />
+              <Route path="/ai-sdr/audits" element={<SDRAudits />} />
+              <Route path="/ai-sdr/deliverability" element={<SDRDeliverability />} />
+              <Route path="/ai-sdr/campaigns" element={<SDRCampaigns />} />
+              <Route path="/ai-sdr/outreach" element={<SDROutreach />} />
+              <Route path="/ai-sdr/inbox" element={<SDRInbox />} />
               <Route path="/crm/:id" element={<LeadDetail />} />
               <Route path="/contacts" element={<Contacts />} />
               <Route path="/clients" element={<Clients />} />
@@ -82,6 +106,8 @@ function App() {
               <Route path="/tasks" element={<Tasks />} />
               <Route path="/finance" element={<Finance />} />
               <Route path="/invoices" element={<Invoices />} />
+              <Route path="/payment-links" element={<PaymentLinks />} />
+              <Route path="/emails" element={<Emails />} />
               <Route path="/invoices/:id" element={<InvoiceDetail />} />
               <Route path="/proposals" element={<Proposals />} />
               <Route path="/proposals/:id" element={<ProposalDetail />} />

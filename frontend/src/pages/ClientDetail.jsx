@@ -82,8 +82,10 @@ export default function ClientDetail() {
 
   const copyPortalCreds = async () => {
     if (!portalCreds) return;
-    await navigator.clipboard.writeText(`Email: ${portalCreds.email}`);
-    toast.success("Portal login email copied");
+    const lines = [`Email: ${portalCreds.email}`];
+    if (portalCreds.temp_password) lines.push(`Password: ${portalCreds.temp_password}`);
+    await navigator.clipboard.writeText(lines.join("\n"));
+    toast.success(portalCreds.temp_password ? "Portal login copied" : "Portal login email copied");
   };
 
   if (!client) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
@@ -208,9 +210,6 @@ export default function ClientDetail() {
               <div className="space-y-1"><Label>Contact Name</Label><Input data-testid="portal-form-name" required value={portalForm.name} onChange={(e) => setPortalForm({ ...portalForm, name: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <div className="space-y-1"><Label>Email</Label><Input data-testid="portal-form-email" type="email" required value={portalForm.email} onChange={(e) => setPortalForm({ ...portalForm, email: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <DialogFooter><Button type="submit" data-testid="portal-form-submit">Create Access</Button></DialogFooter>
-              <div className="text-xs text-graphite text-center pt-1">
-                Note: Please check your spam folder if the email is not delivered to you.
-              </div>
             </form>
           ) : (
             <div className="space-y-3" data-testid="portal-credentials-result">
@@ -219,9 +218,7 @@ export default function ClientDetail() {
                 <p>Email: {creds.email}</p>
                 <p>Password: {creds.temp_password}</p>
               </div>
-              <div className="text-xs text-graphite text-center pt-1">
-                Note: Please check your spam folder if the email is not delivered to you.
-              </div>
+              <p className="text-xs text-graphite">These credentials are stored here for portal access. No email is sent automatically.</p>
             </div>
           )}
         </DialogContent>
@@ -234,16 +231,17 @@ export default function ClientDetail() {
             <div className="space-y-3">
               <div className="rounded-lg bg-surface-2 border border-white/10 p-3 font-mono text-sm space-y-1">
                 <p>Email: {portalCreds.email}</p>
-                <p>Password: Not stored for security. Use Reset Password to email a new temporary password.</p>
+                <p>Password: {portalCreds.temp_password || "No stored password yet. Use Reset Password to generate one here."}</p>
               </div>
+              {portalCreds.password_updated_at && (
+                <p className="text-xs text-graphite">Last generated: {new Date(portalCreds.password_updated_at).toLocaleString()}</p>
+              )}
               <DialogFooter>
                 <Button type="button" variant="outline" className="gap-1.5 border-white/10" onClick={copyPortalCreds}>
                   <Copy className="h-3.5 w-3.5" /> Copy
                 </Button>
               </DialogFooter>
-              <div className="text-xs text-graphite text-center pt-1">
-                Note: Please check your spam folder if the email is not delivered to you.
-              </div>
+              <p className="text-xs text-graphite text-center pt-1">No email is sent automatically for portal password resets.</p>
             </div>
           )}
         </DialogContent>

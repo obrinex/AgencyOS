@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { CalendarDays, Clock, MapPin, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,12 @@ const api = axios.create({ baseURL: `${process.env.REACT_APP_BACKEND_URL || ""}/
 
 export default function BookMeeting() {
   const { slug } = useParams();
+  // Signed reference from an SDR outreach email. Passed straight through so
+  // the booking attaches to the lead that was invited — without it the
+  // meeting lands in the calendar attributed to nobody, and their sequence
+  // keeps emailing someone who has already booked.
+  const [searchParams] = useSearchParams();
+  const ref = searchParams.get("ref");
   const [info, setInfo] = useState(null);
   const [notFound, setNotFound] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -56,7 +62,9 @@ export default function BookMeeting() {
     setSubmitting(true);
     setError("");
     try {
-      const { data } = await api.post(`/public/booking/${slug}/book`, { ...form, start_time: selectedSlot });
+      const { data } = await api.post(`/public/booking/${slug}/book`, {
+        ...form, start_time: selectedSlot, ...(ref ? { ref } : {}),
+      });
       setConfirmed(data);
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail));

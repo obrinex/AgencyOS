@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Optional
@@ -40,6 +41,9 @@ class BookRequest(BaseModel):
     name: str
     email: EmailStr
     notes: Optional[str] = None
+    #: Signed reference from an SDR outreach email, tying this booking back to
+    #: the lead that was invited. Absent for ordinary public bookings.
+    ref: Optional[str] = None
 
 
 async def _get_or_create_settings() -> dict:
@@ -225,6 +229,19 @@ async def public_book(slug: str, payload: BookRequest):
     }
     res = await db.meetings.insert_one(doc)
 
+    # An SDR-originated booking attaches to its lead: stage moves, sequence
+    # stops. Wrapped because a booking is a real commitment in the calendar —
+    # failing to attribute it must never lose it.
+    attached = None
+    if payload.ref:
+        try:
+            from sdr.services import meetings as sdr_meetings
+            attached = await sdr_meetings.attach_booking(str(res.inserted_id), payload.ref)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Could not attach booking %s to a lead", res.inserted_id
+            )
+
     admins = await db.users.find({"role": "admin"}).to_list(20)
     local_label = local_start.strftime("%b %d, %Y at %I:%M %p")
 
@@ -255,4 +272,5 @@ async def public_book(slug: str, payload: BookRequest):
         "start_time": doc["start_time"],
         "end_time": doc["end_time"],
         "timezone": settings.get("timezone"),
+        "attached_to_lead": bool((attached or {}).get("attached")),
     }

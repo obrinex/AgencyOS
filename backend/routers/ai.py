@@ -91,19 +91,39 @@ async def _build_history(user_id: str, session_id: str, limit: int = 10) -> list
 async def _stream_and_save(system: str, history: list, text: str, user_id: str, session_id: str, kind: str):
     client = _get_client()
     messages = [{"role": "system", "content": system}] + history + [{"role": "user", "content": text}]
-
-    async def gen():
-        full = ""
+    try:
         stream = await client.chat.completions.create(
             model=NVIDIA_MODEL,
             messages=messages,
             stream=True,
         )
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content if chunk.choices else None
-            if delta:
-                full += delta
-                yield f"data: {json.dumps({'delta': delta})}\n\n"
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI provider request failed: {str(exc)}")
+
+    async def gen():
+        # Recorded here rather than around the whole handler: a streaming
+        # response returns before any tokens exist, so timing it outside the
+        # generator would log a few milliseconds and no usage.
+        from ai_platform import record_assistant
+
+        full = ""
+        async with record_assistant(
+            _ASSISTANT_KEYS.get(kind, "crm_assistant"), user_id=user_id
+        ) as run:
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    full += delta
+                    yield f"data: {json.dumps({'delta': delta})}\n\n"
+            # Streaming responses carry no usage object, so tokens are
+            # approximated from the text. Flagged as an estimate everywhere
+            # it surfaces.
+            from sdr.agents.base.cost import approximate_tokens
+            run.tokens(approximate_tokens(system + text), approximate_tokens(full))
+            run.used(model=NVIDIA_MODEL, provider="nvidia")
+
         await db.ai_chat_messages.insert_one({
             "user_id": user_id, "session_id": session_id, "kind": kind,
             "user_message": text, "assistant_message": full,
@@ -112,6 +132,76 @@ async def _stream_and_save(system: str, history: list, text: str, user_id: str, 
         yield f"data: {json.dumps({'done': True})}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _local_assistant_reply(text: str, mode: str, context: str) -> str:
+    if mode == "guide":
+        return (
+            "I can help with AgencyOS modules from the left menu. Open Dashboard for KPIs, Pipeline for leads, "
+            "Lead Finder for prospects, Clients for portal access, Projects/Tasks for delivery, Finance for invoices, "
+            "and Settings for team/admin setup. The AI provider is temporarily unavailable, so this is a local guide reply."
+        )
+    lowered = text.lower()
+    if "lead" in lowered or "pipeline" in lowered:
+        return "Open Pipeline to review leads by stage, then use AI Lead Finder to discover prospects and import them into CRM."
+    if "invoice" in lowered or "payment" in lowered or "revenue" in lowered:
+        return "Open Finance or Invoices to review revenue, outstanding amounts, payment links, and invoice status."
+    return (
+        "I can still help with AgencyOS basics while the AI provider is slow/unavailable. Use the left menu to open the module you need, "
+        "or ask a specific question about clients, leads, projects, invoices, tasks, or settings."
+    )
+
+
+#: Which entry in the platform AI monitor each `kind` reports as. Keeps these
+#: pre-existing features visible alongside the SDR agents without rewriting
+#: them - see ai_platform.py.
+#: Keys are the `kind` values the existing handlers already pass through.
+_ASSISTANT_KEYS = {
+    "generate_email": "email_generator",
+    "generate_proposal": "proposal_generator",
+    "summarize_meeting": "meeting_summarizer",
+    "draft_reply": "lead_reply_drafter",
+    "chat": "crm_assistant",
+    "guide": "crm_assistant",
+}
+
+
+async def _complete_and_save(system: str, history: list, text: str, user_id: str, session_id: str, kind: str, mode: str = "general"):
+    messages = [{"role": "system", "content": system}] + history + [{"role": "user", "content": text}]
+    from ai_platform import record_assistant
+
+    assistant_key = _ASSISTANT_KEYS.get(kind, "crm_assistant")
+    async with record_assistant(assistant_key, user_id=user_id) as run:
+        return await _complete_inner(
+            messages, system, text, user_id, session_id, kind, mode, run
+        )
+
+
+async def _complete_inner(messages, system, text, user_id, session_id, kind, mode, run):
+    try:
+        client = _get_client()
+        resp = await client.chat.completions.create(
+            model=NVIDIA_MODEL,
+            messages=messages,
+            stream=False,
+            timeout=25,
+        )
+        full = resp.choices[0].message.content.strip()
+        usage = getattr(resp, "usage", None)
+        if usage:
+            run.tokens(getattr(usage, "prompt_tokens", 0), getattr(usage, "completion_tokens", 0))
+        run.used(model=NVIDIA_MODEL, provider="nvidia")
+    except Exception as exc:
+        logger_msg = f"AI provider request failed; using local fallback: {str(exc)}"
+        import logging
+        logging.getLogger(__name__).warning(logger_msg)
+        full = _local_assistant_reply(text, mode, system)
+    await db.ai_chat_messages.insert_one({
+        "user_id": user_id, "session_id": session_id, "kind": kind,
+        "user_message": text, "assistant_message": full,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"message": full}
 
 
 @router.post("/chat")
@@ -134,6 +224,26 @@ async def ai_chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
         )
     history = await _build_history(user["id"], payload.session_id)
     return await _stream_and_save(system, history, payload.message, user["id"], payload.session_id, "chat")
+
+
+@router.post("/chat-json")
+async def ai_chat_json(payload: ChatRequest, user: dict = Depends(get_current_user)):
+    context = await build_crm_context() if user["role"] != "client" else "No agency data available for client role."
+    if payload.mode == "guide":
+        system = (
+            "You are the AgencyOS Dashboard Guide AI. Help staff understand how to use the dashboard and every module. "
+            "Be concise, practical, and step-by-step.\n\n"
+            + GUIDE_CONTEXT
+            + "\nCurrent agency data snapshot:\n"
+            + context
+        )
+    else:
+        system = (
+            "You are the AgencyOS AI Assistant for an AI automation agency. Be concise and actionable.\n\n"
+            "Current agency data snapshot:\n" + context
+        )
+    history = await _build_history(user["id"], payload.session_id)
+    return await _complete_and_save(system, history, payload.message, user["id"], payload.session_id, "chat", payload.mode)
 
 
 @router.post("/summarize-meeting")

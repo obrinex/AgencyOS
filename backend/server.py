@@ -13,10 +13,29 @@ import os
 from database import db, client, create_indexes
 from seed import seed_admin, seed_company_settings
 
-from routers import auth, crm, clients, portal, projects, finance, documents, support, knowledge, vault, files, notifications, dashboard, search, ai, settings, meetings, automations, public, notes, bookings, leadform, leadfinder
+from routers import auth, crm, clients, portal, projects, finance, documents, support, knowledge, vault, files, notifications, dashboard, search, ai, settings, meetings, automations, public, notes, bookings, leadform, leadfinder, emails, payment_links, sdr, ai_agents
 from reminders import reminder_loop, daily_loop
 
 IS_PRODUCTION = os.environ.get("APP_ENV", "development").lower() == "production"
+RUN_BACKGROUND_LOOPS = os.environ.get("RUN_BACKGROUND_LOOPS", "false").lower() == "true"
+REQUIRED_ENV = ["MONGO_URL", "DB_NAME", "JWT_SECRET", "VAULT_ENCRYPTION_KEY"]
+
+
+def validate_environment():
+    missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+    if missing:
+        raise RuntimeError(f"Missing required environment variable(s): {', '.join(missing)}")
+    if IS_PRODUCTION:
+        weak_values = {"secret", "changeme", "password", "123", "dev", "development"}
+        if os.environ["JWT_SECRET"].lower() in weak_values or len(os.environ["JWT_SECRET"]) < 32:
+            raise RuntimeError("JWT_SECRET must be a strong production secret")
+        if len(os.environ["VAULT_ENCRYPTION_KEY"]) < 32:
+            raise RuntimeError("VAULT_ENCRYPTION_KEY must be a valid strong production encryption key")
+        if not os.environ.get("CRON_SECRET"):
+            raise RuntimeError("CRON_SECRET is required in production for stateless scheduled automation endpoints")
+
+
+validate_environment()
 app = FastAPI(
     title="AgencyOS API",
     docs_url=None if IS_PRODUCTION else "/docs",
@@ -55,6 +74,10 @@ app.include_router(notes.router)
 app.include_router(bookings.router)
 app.include_router(leadform.router)
 app.include_router(leadfinder.router)
+app.include_router(emails.router)
+app.include_router(payment_links.router)
+app.include_router(sdr.router)
+app.include_router(ai_agents.router)
 
 allowed_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", os.environ.get("FRONTEND_URL", "http://localhost:3000")).split(",") if origin.strip()]
 if "*" in allowed_origins:
@@ -92,9 +115,13 @@ async def startup_event():
     await create_indexes()
     await seed_admin()
     await seed_company_settings()
-    import asyncio
-    asyncio.create_task(reminder_loop())
-    asyncio.create_task(daily_loop())
+    if RUN_BACKGROUND_LOOPS:
+        import asyncio
+        asyncio.create_task(reminder_loop())
+        asyncio.create_task(daily_loop())
+        logger.warning("Background loops are enabled. Do not use this mode on Hostinger managed Node.js hosting.")
+    else:
+        logger.info("Background loops disabled; use authenticated cron endpoints for scheduled jobs")
     logger.info("AgencyOS backend started")
 
 

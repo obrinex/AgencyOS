@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import DatePicker from "@/components/DatePicker";
 import { toast } from "sonner";
@@ -27,6 +27,20 @@ export default function ProjectDetail() {
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [time, setTime] = useState(null);
   const [timeForm, setTimeForm] = useState({ description: "", hours: "" });
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const deleteProject = async () => {
+    setDeleting(true);
+    try {
+      await api.delete(`/projects/${id}`);
+      toast.success("Project deleted");
+      navigate("/projects");
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+      setDeleting(false);
+    }
+  };
 
   const load = async () => {
     const [{ data }, t] = await Promise.all([api.get(`/projects/${id}`), api.get(`/projects/${id}/time`)]);
@@ -125,8 +139,34 @@ export default function ProjectDetail() {
             <SelectTrigger data-testid="project-status-select" className="w-48 bg-surface-1 border-white/10"><SelectValue /></SelectTrigger>
             <SelectContent>{PROJECT_STATUS_LIST.map((s) => <SelectItem key={s} value={s}>{PROJECT_STATUS_CONFIG[s].label}</SelectItem>)}</SelectContent>
           </Select>
+          {user.role !== "client" && (
+            <Button
+              data-testid="delete-project-btn"
+              size="sm" variant="outline" className="gap-1.5 border-white/10 text-danger hover:text-danger"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </Button>
+          )}
         </div>
       </div>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="bg-surface-1 border-white/10" data-testid="delete-project-dialog">
+          <DialogHeader>
+            <DialogTitle>Delete project?</DialogTitle>
+            <DialogDescription>
+              This permanently deletes <span className="text-foreground font-medium">{project.name}</span> along with its tasks, milestones, and logged time. This can't be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" className="border-white/10" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" data-testid="confirm-delete-project-btn" onClick={deleteProject} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete Project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4 bg-surface-1 border-white/10"><p className="text-[10px] font-mono uppercase text-graphite">Budget</p><p className="font-display text-xl font-bold">${(project.budget || 0).toLocaleString()}</p></Card>

@@ -22,7 +22,7 @@ export default function Clients() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const navigate = useNavigate();
 
-  const load = () => api.get("/clients").then((r) => setClients(r.data));
+  const load = () => api.get("/clients", { params: { _ts: Date.now() } }).then((r) => setClients(r.data));
 
   useEffect(() => { load(); }, []);
 

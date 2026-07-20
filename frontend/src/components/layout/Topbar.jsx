@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Bell, Sparkles, LogOut, User, Settings as SettingsIcon } from "lucide-react";
+import { Search, Bell, Sparkles, LogOut, Settings as SettingsIcon, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
 
-export default function Topbar({ onOpenCommandPalette, onOpenAssistant }) {
+export default function Topbar({ onOpenCommandPalette, onOpenAssistant, onOpenMobileNav }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
@@ -44,6 +44,16 @@ export default function Topbar({ onOpenCommandPalette, onOpenAssistant }) {
       data-testid="topbar"
       className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-white/10 bg-background/80 backdrop-blur-xl px-4 md:px-6"
     >
+      <button
+        type="button"
+        data-testid="mobile-menu-trigger"
+        onClick={onOpenMobileNav}
+        className="md:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-surface-1 hover:bg-surface-2 transition-colors"
+        aria-label="Open navigation"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
       <button
         data-testid="global-search-trigger"
         onClick={onOpenCommandPalette}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatApiError } from "@/lib/api";
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 
 export default function Login() {
   const { login, verify2FA, user } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -33,9 +34,10 @@ export default function Login() {
         setRequires2FA(true);
       } else {
         toast.success("Welcome back!");
+        navigate("/dashboard", { replace: true });
       }
     } catch (err) {
-      setError(formatApiError(err.response?.data?.detail));
+      setError(err.response?.data?.detail ? formatApiError(err.response.data.detail) : "Login request could not reach the server. Clear site data or try another browser.");
     } finally {
       setLoading(false);
     }
@@ -48,8 +50,9 @@ export default function Login() {
     try {
       await verify2FA(code);
       toast.success("Welcome back!");
+      navigate("/dashboard", { replace: true });
     } catch (err) {
-      setError(formatApiError(err.response?.data?.detail));
+      setError(err.response?.data?.detail ? formatApiError(err.response.data.detail) : "Verification request could not reach the server. Clear site data or try another browser.");
     } finally {
       setLoading(false);
     }

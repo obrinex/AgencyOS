@@ -22,6 +22,17 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# .env.purge wins when present: it is how a one-off production purge is pointed
+# at Atlas without putting the connection string on a command line (where it
+# would land in shell history). Blank entries are ignored so a half-filled
+# template silently falls back to .env instead of connecting nowhere.
+_purge_env = Path(__file__).with_name(".env.purge")
+if _purge_env.exists():
+    from dotenv import dotenv_values
+
+    for _k, _v in dotenv_values(_purge_env).items():
+        if _v and _v.strip():
+            os.environ[_k] = _v.strip()
 load_dotenv(Path(__file__).with_name(".env"))
 
 from database import db, client

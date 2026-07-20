@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
-import Sidebar from "@/components/layout/Sidebar";
+import Sidebar, { MobileNav } from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import CommandPalette from "@/components/CommandPalette";
 import AIAssistant from "@/components/AIAssistant";
@@ -12,6 +12,7 @@ export default function AppLayout() {
   const [assistantPrompt, setAssistantPrompt] = useState("");
   const [assistantPromptKey, setAssistantPromptKey] = useState(0);
   const [assistantSuggestions, setAssistantSuggestions] = useState(undefined);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const handler = (e) => {
@@ -35,8 +36,13 @@ export default function AppLayout() {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background" data-testid="app-layout">
       <Sidebar />
+      <MobileNav open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Topbar onOpenCommandPalette={() => setPaletteOpen(true)} onOpenAssistant={() => openAssistant()} />
+        <Topbar
+          onOpenCommandPalette={() => setPaletteOpen(true)}
+          onOpenAssistant={() => openAssistant()}
+          onOpenMobileNav={() => setMobileNavOpen(true)}
+        />
         <main className="flex-1 overflow-y-auto scrollbar-thin">
           <Outlet context={{ openAssistant }} />
         </main>

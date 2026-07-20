@@ -3,7 +3,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sparkles, Send, Loader2, Bot, User as UserIcon } from "lucide-react";
-import { API } from "@/lib/api";
+import api, { formatApiError } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 const DEFAULT_SUGGESTIONS = [
@@ -38,37 +38,16 @@ export default function AIAssistant({ open, onOpenChange, initialPrompt, initial
     setMessages((prev) => [...prev, { role: "user", content: msg }, { role: "assistant", content: "" }]);
     setLoading(true);
     try {
-      const res = await fetch(`${API}/ai/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ message: msg, session_id: mode, mode }),
+      const { data } = await api.post("/ai/chat-json", { message: msg, session_id: mode, mode });
+      setMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = { role: "assistant", content: data.message };
+        return next;
       });
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const payload = JSON.parse(line.slice(6));
-          if (payload.delta) {
-            setMessages((prev) => {
-              const next = [...prev];
-              next[next.length - 1] = { role: "assistant", content: next[next.length - 1].content + payload.delta };
-              return next;
-            });
-          }
-        }
-      }
     } catch (e) {
       setMessages((prev) => {
         const next = [...prev];
-        next[next.length - 1] = { role: "assistant", content: "Sorry, I ran into an error. Please try again." };
+        next[next.length - 1] = { role: "assistant", content: formatApiError(e.response?.data?.detail) };
         return next;
       });
     } finally {

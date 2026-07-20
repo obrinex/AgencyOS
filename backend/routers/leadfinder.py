@@ -23,7 +23,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/leadfinder", tags=["leadfinder"])
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_URLS = [
+    url.strip()
+    for url in os.environ.get(
+        "OVERPASS_URLS",
+        "https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter,https://overpass.openstreetmap.ru/api/interpreter",
+    ).split(",")
+    if url.strip()
+]
 USER_AGENT = "AgencyOS-LeadFinder/1.0 (info@obrinex.space)"
 
 # niche -> OSM tag filters
@@ -45,6 +52,24 @@ NICHES = {
     "car_repair": '["shop"="car_repair"]',
 }
 
+NICHE_SEARCH_TERMS = {
+    "cafe": "cafe",
+    "restaurant": "restaurant",
+    "dental_clinic": "dentist",
+    "medical_clinic": "clinic",
+    "doctor": "doctor",
+    "pharmacy": "pharmacy",
+    "salon": "hair salon",
+    "beauty": "beauty salon",
+    "gym": "gym",
+    "hotel": "hotel",
+    "real_estate": "real estate agent",
+    "lawyer": "lawyer",
+    "accountant": "accountant",
+    "veterinary": "veterinary clinic",
+    "car_repair": "car repair",
+}
+
 
 class SearchRequest(BaseModel):
     niche: str
@@ -64,6 +89,52 @@ class ImportRequest(BaseModel):
     analysis: Optional[dict] = None
 
 
+async def _fallback_nominatim_businesses(client: httpx.AsyncClient, payload: SearchRequest, place: dict) -> list:
+    query_place = payload.city + (f", {payload.country}" if payload.country else "")
+    term = NICHE_SEARCH_TERMS.get(payload.niche, payload.niche.replace("_", " "))
+    limit = min(int(payload.limit or 25), 25)
+    resp = await client.get(
+        NOMINATIM_URL,
+        params={
+            "q": f"{term} in {query_place}",
+            "format": "json",
+            "limit": limit,
+            "addressdetails": 1,
+            "extratags": 1,
+            "namedetails": 1,
+        },
+    )
+    if resp.status_code != 200:
+        return []
+    businesses = []
+    seen_names = set()
+    for item in resp.json():
+        name = (
+            (item.get("namedetails") or {}).get("name")
+            or item.get("name")
+            or item.get("display_name", "").split(",")[0]
+        )
+        if not name or name.lower() in seen_names:
+            continue
+        seen_names.add(name.lower())
+        address = item.get("display_name") or payload.city
+        extra = item.get("extratags") or {}
+        businesses.append({
+            "name": name,
+            "address": address,
+            "phone": extra.get("phone") or extra.get("contact:phone"),
+            "website": extra.get("website") or extra.get("contact:website"),
+            "email": extra.get("email") or extra.get("contact:email"),
+            "opening_hours": extra.get("opening_hours"),
+            "cuisine": extra.get("cuisine"),
+            "city": payload.city,
+            "country": payload.country or place.get("display_name", "").split(",")[-1].strip(),
+            "niche": payload.niche,
+            "osm_id": f"nominatim/{item.get('osm_type', 'place')}/{item.get('osm_id') or item.get('place_id')}",
+        })
+    return businesses
+
+
 @router.get("/niches")
 async def list_niches(user: dict = Depends(require_staff)):
     return {"niches": list(NICHES.keys())}
@@ -75,7 +146,9 @@ async def search_businesses(payload: SearchRequest, user: dict = Depends(require
         raise HTTPException(status_code=400, detail=f"Niche must be one of: {', '.join(NICHES)}")
     query_place = payload.city + (f", {payload.country}" if payload.country else "")
 
-    async with httpx.AsyncClient(timeout=40, headers={"User-Agent": USER_AGENT}) as client:
+    # Short per-request timeouts: worst case (geocode + all mirrors + fallback) must
+    # stay under the serverless function limit instead of hanging on one slow mirror.
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0), headers={"User-Agent": USER_AGENT}) as client:
         # 1. Geocode the city to a bounding box
         geo = await client.get(NOMINATIM_URL, params={"q": query_place, "format": "json", "limit": 1})
         if geo.status_code != 200 or not geo.json():
@@ -86,17 +159,35 @@ async def search_businesses(payload: SearchRequest, user: dict = Depends(require
         # 2. Query Overpass for businesses of this type in the area
         tag = NICHES[payload.niche]
         overpass_query = f"""
-        [out:json][timeout:30];
+        [out:json][timeout:8];
         (
           node{tag}({south},{west},{north},{east});
           way{tag}({south},{west},{north},{east});
         );
         out center tags {min(int(payload.limit or 25) * 3, 150)};
         """
-        resp = await client.post(OVERPASS_URL, data={"data": overpass_query})
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Business database is busy — try again in a minute")
-        elements = resp.json().get("elements", [])
+        elements = None
+        last_error = None
+        for overpass_url in OVERPASS_URLS:
+            try:
+                resp = await client.post(overpass_url, data={"data": overpass_query})
+                if resp.status_code == 200:
+                    elements = resp.json().get("elements", [])
+                    break
+                last_error = f"{overpass_url} returned HTTP {resp.status_code}"
+            except Exception as exc:
+                last_error = f"{overpass_url} failed: {str(exc)}"
+                logger.warning("Lead Finder Overpass request failed", exc_info=True)
+        if elements is None:
+            fallback_businesses = await _fallback_nominatim_businesses(client, payload, place)
+            if fallback_businesses:
+                return {
+                    "place": place.get("display_name"),
+                    "count": len(fallback_businesses),
+                    "businesses": fallback_businesses,
+                    "source": "nominatim_fallback",
+                }
+            raise HTTPException(status_code=502, detail=f"Business database is busy — try again in a minute ({last_error})")
 
     businesses = []
     seen_names = set()
@@ -168,11 +259,16 @@ async def analyze_business(payload: AnalyzeRequest, user: dict = Depends(require
         f'"cold_email": "a personalized cold email, under 130 words, mentioning their business by name, ending with a soft call-to-action for a free 15-min call",'
         f'"whatsapp_message": "a casual 50-word-max WhatsApp/DM version of the pitch"}}'
     )
-    resp = await client.chat.completions.create(
-        model=NVIDIA_MODEL,
-        messages=[{"role": "system", "content": "You output only valid JSON. No markdown fences, no commentary."},
-                  {"role": "user", "content": prompt}],
-    )
+    try:
+        resp = await client.chat.completions.create(
+            model=NVIDIA_MODEL,
+            messages=[{"role": "system", "content": "You output only valid JSON. No markdown fences, no commentary."},
+                      {"role": "user", "content": prompt}],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI pitch generation failed: {str(exc)}")
     raw = resp.choices[0].message.content.strip()
     if raw.startswith("```"):
         raw = raw.strip("`").lstrip("json").strip()
