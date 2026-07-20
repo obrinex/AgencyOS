@@ -43,12 +43,14 @@ Full detail: `docs/ai-sdr/00-existing-architecture-report.md`.
 
 ## 2. What exists now
 
-**Phases 0–7 are built and tested.** Phases 0–5b are deployed; threading,
-inbound replies (Phase 6) and meetings (Phase 7) are built but **not yet
-deployed or committed** — see §6.4.
+**Phases 0–7 are built, tested, committed and deployed** (20 July 2026).
+545 tests. Everything ships inert — see §4.
 
-What remains unbuilt is WhatsApp (blocked on Meta approval) and A/B testing
-(deliberately deferred — see §10.4).
+What remains unbuilt is blocked on something that is not code: WhatsApp needs
+Meta approval, competitor analysis needs a search provider (none configured —
+the registry holds OSM, Google Places and CSV import, which are place lookup,
+not web search), and A/B testing is deliberately deferred until volume makes
+a result mean anything. See §10.4.
 
 ### Backend — `backend/sdr/`
 
@@ -228,9 +230,13 @@ written.*
 
 ### 6.4 Repo hygiene
 
-- **~60 uncommitted files are live in production.** The backend deploys from
-  the working tree via CLI, not git — so `main` cannot reproduce what's
-  running. A rollback today restores a version production has never executed.
+- ~~**~60 uncommitted files are live in production.**~~ **Resolved 20 July
+  2026.** The tree was committed in four commits and pushed to `origin/main`
+  (`ba616f2`). The entire AI SDR module — 112 backend files, 30 frontend —
+  had never been committed at all; `main` could not reproduce production and a
+  rollback would have restored a version that had never run. It can now.
+  Backend and frontend were then deployed from that same tree, so git and
+  production agree.
 - `backfill_fx_rates.py` still unrun (USD invoice totals understated).
 - Cashfree live transactions still not approved by Cashfree.
 
