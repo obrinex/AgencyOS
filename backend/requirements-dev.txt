@@ -1,0 +1,13 @@
+# Test-only dependencies. Deliberately separate from requirements.txt so
+# nothing here is installed into the serverless production bundle.
+#
+#   pip install -r requirements-dev.txt
+#   python -m pytest tests/sdr
+
+pytest
+pytest-asyncio==1.4.0
+
+# In-memory MongoDB for the SDR repository/service tests, so CI needs no
+# database. Note it does not enforce unique indexes - dedupe_key uniqueness is
+# covered at the application level, and only a real MongoDB proves the index.
+mongomock-motor==0.0.36
