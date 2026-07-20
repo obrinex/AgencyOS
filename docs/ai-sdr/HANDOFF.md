@@ -525,4 +525,5 @@ would produce a feature that mostly generates false confidence.
 
 ---
 
+External services and keys: `docs/ai-sdr/EXTERNAL-SERVICES.md`.
 Full history: `docs/ai-sdr/CHANGELOG.md`. Decisions: `docs/ai-sdr/adr/`.
