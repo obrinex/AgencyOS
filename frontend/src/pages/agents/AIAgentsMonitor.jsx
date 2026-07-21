@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Bot, Sparkles, Activity, AlertTriangle, DollarSign, Cpu, Zap, CheckCircle2, XCircle,
+  ChevronDown,
 } from "lucide-react";
 import api from "@/lib/api";
+import { cn } from "@/lib/utils";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import { Card } from "@/components/ui/card";
@@ -10,6 +12,70 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { format } from "date-fns";
+
+/** One use-case group, collapsible.
+ *
+ *  Fifteen capabilities in one flat list is a wall of text where the two that
+ *  are failing look exactly like the eleven that have never run. Collapsing
+ *  is only worth it if a shut group still tells you something, so the header
+ *  carries the summary: how many are working, and whether anything is broken.
+ *
+ *  A group containing a failure opens itself regardless of what was stored -
+ *  the one time you must not have to go looking is when something is wrong.
+ */
+function CapabilityGroup({ group, children }) {
+  const items = group.items || [];
+  const withRuns = items.filter((i) => i.stats);
+  const failing = withRuns.filter((i) => i.stats.success_rate < 0.9);
+
+  const storageKey = `ai-group-${group.category}`;
+  const [open, setOpen] = useState(() => {
+    if (failing.length) return true;
+    try { return localStorage.getItem(storageKey) !== "0"; } catch { return true; }
+  });
+
+  const toggle = () => {
+    setOpen((next) => {
+      const value = !next;
+      try { localStorage.setItem(storageKey, value ? "1" : "0"); } catch { /* private mode */ }
+      return value;
+    });
+  };
+
+  return (
+    <div data-testid={`ai-group-${group.category}`}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        data-testid={`ai-group-toggle-${group.category}`}
+        className="w-full flex items-start gap-2.5 py-2 text-left group/head"
+      >
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 mt-0.5 shrink-0 text-carbon transition-transform duration-200",
+            open ? "" : "-rotate-90"
+          )}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="font-display text-sm font-semibold">{group.label}</p>
+          <p className="text-xs text-graphite">{group.description}</p>
+        </div>
+        <div className="shrink-0 flex items-center gap-2 pt-0.5">
+          {failing.length > 0 && (
+            <span className="font-mono text-[9px] px-1.5 py-0.5 rounded uppercase bg-danger/15 text-danger">
+              {failing.length} failing
+            </span>
+          )}
+          <span className="font-mono text-[10px] text-carbon tabular-nums">
+            {withRuns.length}/{items.length} active
+          </span>
+        </div>
+      </button>
+      {open && <div className="pb-2">{children}</div>}
+    </div>
+  );
+}
 
 const RUN_STATUS_STYLE = {
   succeeded: "bg-success/15 text-success",
@@ -197,12 +263,8 @@ export default function AIAgentsMonitor() {
 
       {/* Capability catalogue, grouped by what the AI is used for. */}
       {visible.map((group) => (
-        <div key={group.category} className="space-y-2" data-testid={`ai-group-${group.category}`}>
-          <div>
-            <p className="font-display text-sm font-semibold">{group.label}</p>
-            <p className="text-xs text-graphite">{group.description}</p>
-          </div>
-          <div className="grid gap-2 md:grid-cols-2">
+        <CapabilityGroup key={group.category} group={group}>
+          <div className="grid gap-2 md:grid-cols-2 stagger-in">
             {group.items.map((item) => (
               <Card
                 key={item.key}
@@ -244,7 +306,7 @@ export default function AIAgentsMonitor() {
               </Card>
             ))}
           </div>
-        </div>
+        </CapabilityGroup>
       ))}
 
       {/* Free provider chain. */}
