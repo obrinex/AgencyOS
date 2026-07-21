@@ -61,6 +61,25 @@ export default function SDROverview() {
     }
   };
 
+  const toggleChannel = async (channel, on) => {
+    setSaving(true);
+    try {
+      const { data: updated } = await api.put("/sdr/settings", {
+        channels: { ...settings.channels, [channel]: on },
+      });
+      setSettings(updated);
+      toast.success(
+        on
+          ? `${channel} sending enabled — messages can now leave the building`
+          : `${channel} sending disabled`
+      );
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const setKillSwitch = async (enabled, reason) => {
     setSaving(true);
     try {
@@ -238,17 +257,35 @@ export default function SDROverview() {
         <Card className="p-5 bg-surface-1 border-white/10" data-testid="sdr-channels">
           <p className="font-display text-sm font-semibold mb-4">Outbound channels</p>
           <div className="space-y-2.5">
-            {Object.entries(settings.channels).map(([channel, on]) => (
-              <div key={channel} className="flex items-center justify-between text-sm" data-testid={`sdr-channel-${channel}`}>
-                <span className="text-graphite capitalize">{channel}</span>
-                <span className={`font-mono text-[9px] px-1.5 py-0.5 rounded uppercase ${on ? "bg-success/15 text-success" : "bg-surface-2 text-graphite"}`}>
-                  {on ? "On" : "Off"}
-                </span>
-              </div>
-            ))}
+            {Object.entries(settings.channels).map(([channel, on]) => {
+              // Only email is built. The rest are declared so the shape is
+              // stable, but switching one on would promise a channel that has
+              // no provider behind it.
+              const available = channel === "email";
+              return (
+                <div key={channel} className="flex items-center justify-between text-sm" data-testid={`sdr-channel-${channel}`}>
+                  <span className="text-graphite capitalize">{channel}</span>
+                  {isAdmin && available ? (
+                    <Switch
+                      id={`sdr-channel-toggle-${channel}`}
+                      data-testid={`sdr-channel-toggle-${channel}`}
+                      checked={on}
+                      disabled={saving}
+                      onCheckedChange={(next) => toggleChannel(channel, next)}
+                    />
+                  ) : (
+                    <span className={`font-mono text-[9px] px-1.5 py-0.5 rounded uppercase ${on ? "bg-success/15 text-success" : "bg-surface-2 text-graphite"}`}>
+                      {available ? (on ? "On" : "Off") : "Not built"}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <p className="text-xs text-carbon mt-4">
-            Sending stays off until deliverability is set up — see the AI SDR docs before enabling a channel.
+            Turning email on only permits sending — it does not start it. Nothing
+            leaves until a campaign runs, a draft is approved, and Outreach is
+            switched from Simulate to LIVE.
           </p>
         </Card>
       </div>

@@ -41,7 +41,8 @@ export default function SDRDeliverability() {
           </p>
           <p className="text-xs text-graphite mt-1">
             That is the intended state until a domain passes DNS and finishes warm-up.
-            Set an identity up here first, then enable the email channel on the AI SDR page.
+            Add an identity below and get its DNS checks passing first, then switch
+            Email on from the Outbound channels card on the AI SDR page.
           </p>
         </Card>
       )}
