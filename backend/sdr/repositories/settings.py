@@ -73,6 +73,18 @@ DEFAULTS = {
     # Reply-To at all (replies then go to the From identity, as they do
     # today). Set this only once the address is real and monitored.
     "reply_to_address": None,
+
+    # --- Inbound replies ------------------------------------------------------
+    #
+    # "imap" polls a real mailbox and leaves it untouched; "webhook" expects
+    # Cloudflare Email Routing to POST. Off by default: an install with no
+    # inbound configured should do nothing rather than fail every tick.
+    "inbound_mode": "off",              # off | imap | webhook
+    "inbound_imap_last_uid": 0,
+    "inbound_imap_uidvalidity": None,
+    "inbound_imap_mailbox": "INBOX",
+    "inbound_last_polled_at": None,
+    "inbound_last_error": None,
     "open_tracking_enabled": False,   # off by default: hurts deliverability and privacy
     "click_tracking_enabled": False,
     "brand_voice": "",

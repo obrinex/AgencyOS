@@ -81,7 +81,7 @@ async def tick() -> dict:
         "campaigns_seen": 0, "stopped": 0, "personalization_queued": 0,
         "new_lead_slots_exhausted": False, "sends_queued": 0,
         "send_sweep_skipped": None, "completed_campaigns": 0,
-        "no_shows_marked": 0, "leads_reverted": 0,
+        "no_shows_marked": 0, "leads_reverted": 0, "replies_ingested": 0,
     }
     if not settings.get("module_enabled") or settings.get("kill_switch"):
         report["send_sweep_skipped"] = "module disabled or kill switch on"
@@ -153,6 +153,21 @@ async def tick() -> dict:
             if summary.get("active", 0) == 0:
                 await campaigns_repo.set_campaign_status(campaign["id"], "completed")
                 report["completed_campaigns"] += 1
+
+    # Inbound poll. Before the email-channel gate, and deliberately so: even
+    # with sending switched off, a reply that already arrived must still stop
+    # its sequence and reach a human.
+    try:
+        from sdr.services import inbound as inbound_service
+        polled = await inbound_service.poll_imap()
+        report["replies_ingested"] = polled.get("processed", 0)
+        if polled.get("truncated"):
+            # More is waiting than one poll can carry. Said out loud so a
+            # backlog is not mistaken for a quiet inbox.
+            logger.info("IMAP backlog: more replies remain after this batch")
+    except Exception:
+        logger.exception("Inbound poll failed")
+        report["replies_ingested"] = None
 
     # No-show sweep. Runs before the email-channel gate on purpose: a meeting
     # that came and went is not a sending concern, and a lead stranded in

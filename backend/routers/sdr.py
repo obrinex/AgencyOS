@@ -924,6 +924,13 @@ async def list_inbox(
     )
 
 
+@router.post("/inbox/poll")
+async def poll_inbox(user: dict = Depends(require_admin)):
+    """Force an IMAP poll. Normally runs on the tick; exposed so the mailbox
+    connection can be tested without waiting for a cron cycle."""
+    return await inbound_service.poll_imap()
+
+
 @router.get("/inbox/summary")
 async def inbox_summary(user: dict = Depends(require_sdr)):
     return await inbound_service.summary()

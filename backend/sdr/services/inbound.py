@@ -69,6 +69,70 @@ async def ingest(normalized: dict) -> dict:
             **acted}
 
 
+async def poll_imap() -> dict:
+    """Fetch and process new replies from the configured mailbox.
+
+    Called from the tick. Every message goes through exactly the same
+    `ingest()` path as a webhook delivery — the transport is the only thing
+    that differs, and nothing downstream knows which one ran.
+
+    The UID cursor advances **only after** the batch is ingested. A crash
+    mid-poll therefore re-fetches, which `ingest_key` makes harmless; the
+    reverse ordering would silently drop replies, and a lost reply is a
+    person who answered and never heard back.
+    """
+    from sdr.providers import inbound_imap
+    from sdr.repositories import settings as settings_repo
+
+    settings = await settings_repo.get_settings()
+    if settings.get("inbound_mode") != "imap":
+        return {"skipped": True, "reason": "inbound_mode is not 'imap'"}
+    if not inbound_imap.is_configured():
+        return {"skipped": True, "reason": "IMAP credentials are not set"}
+
+    try:
+        batch = await inbound_imap.fetch_new(
+            last_uid=int(settings.get("inbound_imap_last_uid") or 0),
+            uidvalidity=settings.get("inbound_imap_uidvalidity"),
+            mailbox=settings.get("inbound_imap_mailbox") or "INBOX",
+        )
+    except Exception as exc:
+        # A mailbox that refuses connections must not take down the tick, but
+        # it must be visible - silent inbound failure is the whole failure
+        # mode this module exists to avoid.
+        logger.exception("IMAP poll failed")
+        await settings_repo.update_settings({
+            "inbound_last_error": f"{type(exc).__name__}: {exc}"[:300],
+            "inbound_last_polled_at": now_iso(),
+        })
+        return {"failed": True, "error": str(exc)[:300]}
+
+    processed, skipped = 0, 0
+    for message in batch["messages"]:
+        if not message.get("ingest_key") or not message.get("from_email"):
+            skipped += 1
+            continue
+        try:
+            result = await ingest(message)
+            if not result.get("duplicate"):
+                processed += 1
+        except Exception:
+            logger.exception("Could not ingest IMAP message %s",
+                             message.get("ingest_key"))
+            skipped += 1
+
+    await settings_repo.update_settings({
+        "inbound_imap_last_uid": batch["last_uid"],
+        "inbound_imap_uidvalidity": batch["uidvalidity"],
+        "inbound_last_polled_at": now_iso(),
+        "inbound_last_error": None,
+    })
+
+    return {"fetched": len(batch["messages"]), "processed": processed,
+            "skipped": skipped, "truncated": batch["truncated"],
+            "last_uid": batch["last_uid"]}
+
+
 async def reclassify(inbound_id: str, category: str, *, user: dict) -> dict:
     """A human overrides the category, and the new one is applied for real.
 
