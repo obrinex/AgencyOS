@@ -1,0 +1,83 @@
+# The external pinger for the AI SDR job queue.
+#
+# Vercel has no long-running process, so nothing in the SDR module happens
+# unless something calls the drain endpoint: no drafts, no sends, no reply
+# polling, no no-show sweep. This is that something.
+#
+# Vercel Hobby crons only fire once a day, and an SDR that acts once a day is
+# not autonomous - hence an external scheduler. GitHub Actions is free and
+# already tied to this repo, so it adds no new vendor or account.
+#
+# SETUP (one step): add a repository secret named CRON_SECRET whose value
+# matches the CRON_SECRET already set in Vercel.
+#   Settings -> Secrets and variables -> Actions -> New repository secret
+# Without it every run 401s, which the guard below reports loudly.
+#
+# A note on timing: GitHub's scheduler is best-effort and runs late under
+# load - five minutes can become fifteen. That is fine here. Every handler is
+# idempotent and time-boxed, so a late tick picks up whatever the last one
+# missed. If you later want tighter pacing, a Cloudflare Worker cron trigger
+# is the free upgrade path.
+
+name: SDR queue drain
+
+on:
+  schedule:
+    # Every 5 minutes. GitHub's stated minimum interval.
+    - cron: "*/5 * * * *"
+  # So it can be triggered by hand from the Actions tab when testing.
+  workflow_dispatch:
+
+# A slow run must never overlap the next tick: two drains at once would race
+# for the same jobs. The claim is atomic so it would be safe, but queueing is
+# cheaper than discovering that.
+concurrency:
+  group: sdr-drain
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the drain endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          # Change this if the backend deployment URL ever changes.
+          BACKEND_URL: https://backend-five-hazel-13.vercel.app
+        run: |
+          set -uo pipefail
+
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET repository secret is not set. Every drain will 401."
+            exit 1
+          fi
+
+          response=$(curl -sS -m 60 -w "\n%{http_code}" -X POST \
+            "${BACKEND_URL}/api/automations/cron/sdr" \
+            -H "x-cron-secret: ${CRON_SECRET}")
+
+          status=$(printf '%s' "${response}" | tail -n1)
+          body=$(printf '%s' "${response}" | sed '$d')
+
+          echo "HTTP ${status}"
+          echo "${body}"
+
+          case "${status}" in
+            200)
+              # The module being switched off is the shipped default, not a
+              # failure - it must not paint the Actions tab red.
+              echo "::notice::Drain completed."
+              ;;
+            401)
+              echo "::error::Rejected. The CRON_SECRET here does not match Vercel's."
+              exit 1
+              ;;
+            409)
+              echo "::notice::Module disabled or kill switch on - nothing to do."
+              ;;
+            *)
+              echo "::error::Unexpected status ${status} from the drain endpoint."
+              exit 1
+              ;;
+          esac

@@ -53,7 +53,33 @@ lead as answered, and suppress an address permanently.
 
 **Cost: free.**
 
-### 2.2 Cloudflare Email Routing — **blocking inbound replies**
+### 2.1b IMAP instead of Cloudflare — **the chosen route**
+
+The reply address `jagjot@obrinexagency.space` is a live Hostinger mailbox
+somebody reads by hand. Cloudflare Email Routing works by taking over the
+domain's MX records, which would silently stop that mailbox receiving
+anything — so polling was chosen instead. No MX change, the mailbox keeps
+working normally.
+
+Set in Vercel (`IMAP_HOST`, `IMAP_PORT`, `IMAP_USER` are already set):
+
+| Variable | Value |
+|---|---|
+| `IMAP_HOST` | `imap.hostinger.com` — **set** |
+| `IMAP_PORT` | `993` — **set** |
+| `IMAP_USER` | `jagjot@obrinexagency.space` — **set** |
+| `IMAP_PASSWORD` | the mailbox password — **you must add this** |
+
+Then set `inbound_mode` to `"imap"` in SDR settings and redeploy. Test with
+`POST /api/sdr/inbox/poll` (admin) before relying on the tick.
+
+The poller never modifies the mailbox: read-only SELECT, `BODY.PEEK`, no flag
+writes, no moves, no deletes. Reading mail by hand does not interfere with it,
+and it does not hide new mail from you.
+
+**Cost: free** (included with the Hostinger mailbox).
+
+### 2.2 Cloudflare Email Routing — *not used, see 2.1b*
 
 Routes mail for your sending domain to a Worker, which posts to the webhook.
 Setup and Worker source: [`inbound-worker.md`](./inbound-worker.md).
@@ -78,23 +104,28 @@ burn a sending domain.
 
 **Cost: free** (included with Resend).
 
-### 2.4 An external pinger — **blocking everything**
+### 2.4 An external pinger — **built, needs one secret**
 
-Vercel has no long-running process, so the job queue only drains when
-something calls `POST /api/sdr/jobs/drain` with the `CRON_SECRET`. Nothing
-runs until this exists.
+Vercel has no long-running process, so nothing in the module happens unless
+something calls the drain endpoint — no drafts, no sends, no reply polling,
+no no-show sweep.
 
-Free options, any one of them:
+**The endpoint is `POST /api/automations/cron/sdr`**, guarded by `CRON_SECRET`
+via an `x-cron-secret` header. Note it is *not* `/api/sdr/jobs/drain` — that
+one is admin-session-only and a cron secret will not open it.
 
-| Option | Notes |
-|---|---|
-| **cron-job.org** | Free, custom headers, 1-minute granularity. Simplest. |
-| **GitHub Actions** cron | Free on public repos; private repos use included minutes. Minimum ~5 min, and scheduled runs can be delayed under load. |
-| **Cloudflare Worker cron trigger** | Free, and you are already using Cloudflare for inbound. Fewest vendors. |
-| Vercel Cron | Hobby plan allows one daily job — too coarse. Not viable here. |
+A GitHub Actions workflow is committed at
+[`.github/workflows/sdr-drain.yml`](../../.github/workflows/sdr-drain.yml),
+running every 5 minutes. **One step to activate:** add a repository secret
+named `CRON_SECRET` matching the value already in Vercel
+(Settings → Secrets and variables → Actions). Until then every run 401s, which
+the workflow reports as a hard failure rather than passing silently.
 
-Recommendation: **the Cloudflare Worker cron**, since that account already
-exists for inbound mail.
+Chosen over the alternatives because it needs no new account and no new
+vendor. Caveat: GitHub's scheduler is best-effort and runs late under load —
+5 minutes can become 15. Harmless here, since every handler is idempotent and
+time-boxed. If tighter pacing is ever wanted, a **Cloudflare Worker cron
+trigger** is the free upgrade.
 
 The stalled-queue banner on the Agents page tells you if it dies.
 
