@@ -47,16 +47,22 @@ class WebsiteAuditAgent(Agent):
         domain = company.get("domain")
         if not domain:
             # Not an error: plenty of small businesses have no site at all.
-            # That is itself a finding, and a strong one - but it is recorded
-            # as a skipped audit, not a failed job.
+            # That is itself a finding, and the strongest one this module can
+            # produce - so it is recorded as one rather than as an empty
+            # result. Treating it as "nothing found" scored the best prospect
+            # an automation agency can have at zero on the largest component.
+            facts = {"has_website": False}
             audit = await audits_repo.save_audit(
-                company_id, {}, status="skipped",
+                company_id, facts, status="skipped",
                 error="Company has no website", unmeasured=detect.UNMEASURED_FACTS,
             )
+            found = signals_domain.detect(facts)
+            await audits_repo.replace_signals(company_id, audit["id"], found)
             await companies_repo.update_company(company_id, {"last_audited_at": audit["audited_at"]})
             return {
                 "company_id": company_id, "audit_id": audit["id"],
-                "status": "skipped", "reason": "no website", "signals": [],
+                "status": "skipped", "reason": "no website",
+                "signals": [s["signal_key"] for s in found],
             }
 
         url = f"https://{domain}"

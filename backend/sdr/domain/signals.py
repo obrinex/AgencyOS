@@ -147,6 +147,29 @@ def _broken_form(facts: dict) -> bool | None:
 
 
 SIGNALS: tuple = (
+    # First because it outranks everything below it: the other signals all
+    # describe a gap *on* a website. This one is the absence of the website.
+    #
+    # It exists because scoring previously treated "no site to audit" as "no
+    # opportunity found", which zeroed the largest scoring component for the
+    # single best prospect an automation agency can have. The audit already
+    # called this "a finding, and a strong one" - it just never emitted one.
+    SignalDef(
+        key="no_website",
+        label="No website at all",
+        description="The business has no website, so every enquiry depends on someone "
+                    "finding a phone number and choosing to ring it during office hours.",
+        severity=CRITICAL,
+        # True when we positively know there is no site. Never guessed: a
+        # company we simply have not looked up yet returns None and claims
+        # nothing, exactly like every other detector here.
+        detector=lambda f: True if f.get("has_website") is False else None,
+        evidence_keys=("has_website",),
+        # The highest in the table. Every other gap loses a share of visitors
+        # who already reached the site; this one loses the visitors too.
+        capture_uplift=0.35,
+        services=("website", "ai-chatbot", "booking-automation"),
+    ),
     SignalDef(
         key="no_chatbot",
         label="No website chat",

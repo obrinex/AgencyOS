@@ -189,3 +189,50 @@ def test_per_signal_values_do_not_sum_to_the_combined_total():
     parts = [roi.estimate_signal_value(marks, FULL_FACTS, s) for s in detected]
     assert sum(p["monthly_opportunity_value"] for p in parts) > combined["monthly_opportunity_value"]
     assert all(p["note"] for p in parts)
+
+
+# --- No website at all ---------------------------------------------------------
+#
+# Regression guard. The audit skips a company with no domain, and for a long
+# while it emitted no signals at all - so the largest scoring component read
+# "no opportunity found" for the single best prospect an automation agency can
+# have. Every such lead scored 20, identically, and looked worthless.
+
+def test_no_website_is_the_strongest_signal_not_the_absence_of_one():
+    detected = signals.detect({"has_website": False})
+    keys = [s["signal_key"] for s in detected]
+    assert "no_website" in keys
+    assert detected[0]["signal_key"] == "no_website", \
+        "it must sort first - nothing outranks having no site at all"
+    assert detected[0]["severity"] == signals.CRITICAL
+
+
+def test_a_company_we_have_not_looked_up_claims_nothing():
+    """The invariant the whole signals module rests on: an absent fact is
+    'unknown', never 'verified absent'. Guessing here would put an invented
+    claim into an email to a real business."""
+    assert [s["signal_key"] for s in signals.detect({})] == []
+
+
+def test_having_a_website_does_not_fire_it():
+    assert "no_website" not in [
+        s["signal_key"] for s in signals.detect({"has_website": True})
+    ]
+
+
+def test_the_no_website_lead_outscores_the_one_we_know_nothing_about():
+    """The point of the fix, stated as a comparison: two identical companies,
+    one confirmed to have no site, one never checked. The confirmed one is a
+    real opportunity and must score higher."""
+    from sdr.domain.scoring import score_lead
+
+    company = {"name": "Kumar Dental", "city": "Asansol",
+               "country_code": "IN", "industry": "dental"}
+    lead = {"source": "osm_overpass"}
+
+    confirmed = score_lead(lead, company, contacts=[],
+                           detected_signals=signals.detect({"has_website": False}))
+    unknown = score_lead(lead, company, contacts=[],
+                         detected_signals=signals.detect({}))
+
+    assert confirmed["score"] > unknown["score"]
