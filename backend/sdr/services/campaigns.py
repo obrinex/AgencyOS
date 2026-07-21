@@ -83,6 +83,14 @@ async def tick() -> dict:
         "send_sweep_skipped": None, "completed_campaigns": 0,
         "no_shows_marked": 0, "leads_reverted": 0, "replies_ingested": 0,
     }
+    # Listening is not acting. Replies are ingested before the module gate,
+    # because mail already sent keeps earning answers after outbound stops -
+    # and the moment you hit the kill switch is exactly when you most need to
+    # know somebody replied. Going deaf on pause would also mean a reply
+    # arriving during a pause never stops its sequence, so the follow-up goes
+    # out the instant you resume.
+    report.update(await _ingest_replies())
+
     if not settings.get("module_enabled") or settings.get("kill_switch"):
         report["send_sweep_skipped"] = "module disabled or kill switch on"
         return report
@@ -154,21 +162,6 @@ async def tick() -> dict:
                 await campaigns_repo.set_campaign_status(campaign["id"], "completed")
                 report["completed_campaigns"] += 1
 
-    # Inbound poll. Before the email-channel gate, and deliberately so: even
-    # with sending switched off, a reply that already arrived must still stop
-    # its sequence and reach a human.
-    try:
-        from sdr.services import inbound as inbound_service
-        polled = await inbound_service.poll_imap()
-        report["replies_ingested"] = polled.get("processed", 0)
-        if polled.get("truncated"):
-            # More is waiting than one poll can carry. Said out loud so a
-            # backlog is not mistaken for a quiet inbox.
-            logger.info("IMAP backlog: more replies remain after this batch")
-    except Exception:
-        logger.exception("Inbound poll failed")
-        report["replies_ingested"] = None
-
     # No-show sweep. Runs before the email-channel gate on purpose: a meeting
     # that came and went is not a sending concern, and a lead stranded in
     # `meeting_scheduled` looks like a win nobody needs to work.
@@ -204,6 +197,26 @@ async def tick() -> dict:
             report["sends_queued"] += 1
 
     return report
+
+
+async def _ingest_replies() -> dict:
+    """Poll for inbound replies, never letting a mailbox problem stop the tick.
+
+    Separated so it can run before the module gate without duplicating the
+    error handling: a mailbox that refuses connections must not take the
+    heartbeat down with it.
+    """
+    try:
+        from sdr.services import inbound as inbound_service
+        polled = await inbound_service.poll_imap()
+        if polled.get("truncated"):
+            # More is waiting than one poll can carry. Said out loud so a
+            # backlog is not mistaken for a quiet inbox.
+            logger.info("IMAP backlog: more replies remain after this batch")
+        return {"replies_ingested": polled.get("processed", 0)}
+    except Exception:
+        logger.exception("Inbound poll failed")
+        return {"replies_ingested": None}
 
 
 async def approve_message(message_id: str, *, user: dict,

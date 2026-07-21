@@ -305,6 +305,86 @@ async def test_the_same_message_twice_is_processed_once(
 
 
 @pytest.mark.asyncio
+async def test_replies_are_read_even_when_the_module_is_off(
+        db, ready, monkeypatch, stub_llm):
+    """Listening is not acting.
+
+    The module ships disabled, so a poll that sat behind the module gate would
+    never run - reply reading would look configured and do nothing. Mail
+    already sent keeps earning answers after outbound stops.
+    """
+    from sdr.providers import inbound_imap
+    from sdr.repositories import inbound as inbound_repo
+    from sdr.repositories import settings as settings_repo
+    from sdr.services import campaigns as campaigns_service
+
+    await settings_repo.update_settings({
+        "module_enabled": False, "inbound_mode": "imap",
+    })
+    monkeypatch.setenv("IMAP_HOST", "imap.hostinger.com")
+    monkeypatch.setenv("IMAP_USER", "jagjot@obrinexagency.space")
+    monkeypatch.setenv("IMAP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(inbound_imap, "_connect", lambda: _FakeIMAP({9: RAW_OOO}))
+
+    report = await campaigns_service.tick()
+
+    assert report["send_sweep_skipped"] == "module disabled or kill switch on"
+    assert report["replies_ingested"] == 1
+    stored = (await inbound_repo.list_inbound())["items"]
+    assert len(stored) == 1
+    assert stored[0]["category"] == "out_of_office"
+
+
+@pytest.mark.asyncio
+async def test_replies_are_still_read_with_the_kill_switch_on(
+        db, ready, monkeypatch, stub_llm):
+    """The moment you hit the emergency stop is exactly when you most need to
+    know somebody replied - and a reply arriving during a pause must still
+    stop its sequence, or the follow-up goes out the instant you resume."""
+    from sdr.providers import inbound_imap
+    from sdr.repositories import settings as settings_repo
+    from sdr.services import campaigns as campaigns_service
+
+    await settings_repo.update_settings({
+        "module_enabled": True, "inbound_mode": "imap",
+    })
+    await settings_repo.set_kill_switch(True, reason="testing")
+    monkeypatch.setenv("IMAP_HOST", "imap.hostinger.com")
+    monkeypatch.setenv("IMAP_USER", "jagjot@obrinexagency.space")
+    monkeypatch.setenv("IMAP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(inbound_imap, "_connect", lambda: _FakeIMAP({11: RAW_REPLY}))
+
+    report = await campaigns_service.tick()
+
+    assert report["send_sweep_skipped"] == "module disabled or kill switch on"
+    assert report["replies_ingested"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_broken_mailbox_never_stops_the_heartbeat(
+        db, ready, monkeypatch, stub_llm):
+    """Polling runs first now, so a refusing mailbox must not take the whole
+    tick down with it."""
+    from sdr.providers import inbound_imap
+    from sdr.repositories import settings as settings_repo
+    from sdr.services import campaigns as campaigns_service
+
+    await settings_repo.update_settings({
+        "module_enabled": True, "inbound_mode": "imap",
+    })
+    monkeypatch.setenv("IMAP_HOST", "imap.hostinger.com")
+    monkeypatch.setenv("IMAP_USER", "jagjot@obrinexagency.space")
+    monkeypatch.setenv("IMAP_PASSWORD", "wrong")
+
+    def _boom():
+        raise OSError("connection refused")
+    monkeypatch.setattr(inbound_imap, "_connect", _boom)
+
+    report = await campaigns_service.tick()   # must not raise
+    assert report["campaigns_seen"] == 0
+
+
+@pytest.mark.asyncio
 async def test_an_unreachable_mailbox_is_recorded_not_swallowed(
         db, ready, monkeypatch, stub_llm):
     """Silent inbound failure is the exact thing this module exists to
