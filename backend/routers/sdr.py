@@ -241,6 +241,23 @@ async def update_settings(payload: SettingsUpdate, user: dict = Depends(require_
             "sdr_settings", "main",
         )
 
+    if "inbound_mode" in patch:
+        if patch["inbound_mode"] not in ("off", "imap", "webhook"):
+            raise HTTPException(
+                status_code=400,
+                detail="inbound_mode must be 'off', 'imap' or 'webhook'.",
+            )
+        if patch["inbound_mode"] == "imap":
+            # Turning it on without credentials would fail silently on every
+            # tick, which reads as "no replies yet" rather than "broken".
+            from sdr.providers import inbound_imap
+            if not inbound_imap.is_configured():
+                raise HTTPException(
+                    status_code=400,
+                    detail="IMAP is not configured. Set IMAP_HOST, IMAP_USER and "
+                           "IMAP_PASSWORD, then redeploy, before switching this on.",
+                )
+
     if "reply_to_address" in patch:
         address = (patch["reply_to_address"] or "").strip() or None
         # A malformed Reply-To silently swallows every reply the campaign

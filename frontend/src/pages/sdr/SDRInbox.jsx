@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bot, Filter, MailQuestion, MessageSquare } from "lucide-react";
-import api from "@/lib/api";
+import {
+  AlertTriangle, Bot, Filter, Loader2, MailQuestion, MessageSquare, Plug, RefreshCw,
+} from "lucide-react";
+import api, { formatApiError } from "@/lib/api";
+import { toast } from "sonner";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import InboundDrawer from "@/components/sdr/InboundDrawer";
@@ -27,6 +30,8 @@ export default function SDRInbox() {
   const [tab, setTab] = useState("needs_human");
   const [category, setCategory] = useState(ALL);
   const [drawerId, setDrawerId] = useState(null);
+  const [settings, setSettings] = useState(null);
+  const [testing, setTesting] = useState(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
@@ -36,15 +41,55 @@ export default function SDRInbox() {
   }, [tab, category]);
 
   const load = useCallback(async () => {
-    const [list, counts] = await Promise.all([
+    const [list, counts, config] = await Promise.all([
       api.get(`/sdr/inbox?${query.toString()}`),
       api.get("/sdr/inbox/summary"),
+      api.get("/sdr/settings"),
     ]);
     setItems(list.data.items);
     setCursor(list.data.next_cursor);
     setHasMore(list.data.has_more);
     setSummary(counts.data);
+    setSettings(config.data);
   }, [query]);
+
+  // Reading the mailbox is the one part of this that depends on credentials
+  // living outside the app, so it gets a button rather than a silent failure
+  // three days later.
+  const testConnection = async () => {
+    setTesting(true);
+    try {
+      const { data } = await api.post("/sdr/inbox/poll");
+      if (data.failed) {
+        toast.error(`Could not reach the mailbox — ${data.error}`);
+      } else if (data.skipped) {
+        toast.warning(`Not polling: ${data.reason}`);
+      } else {
+        toast.success(
+          `Connected. ${data.fetched} message${data.fetched === 1 ? "" : "s"} read, ` +
+          `${data.processed} new.`
+        );
+      }
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const enableImap = async () => {
+    setTesting(true);
+    try {
+      await api.put("/sdr/settings", { inbound_mode: "imap" });
+      toast.success("Reply reading switched on");
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setTesting(false);
+    }
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -62,9 +107,11 @@ export default function SDRInbox() {
     }
   };
 
-  if (!items || !summary) {
+  if (!items || !summary || !settings) {
     return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
   }
+
+  const inboundOn = settings.inbound_mode === "imap";
 
   const filtered = tab === "needs_human" || category !== ALL;
 
@@ -75,6 +122,62 @@ export default function SDRInbox() {
         description="Every reply, matched back to the email that earned it"
         testId="sdr-inbox-header"
       />
+
+      {/* Reply reading is off until someone turns it on, so the page has to
+          say so — an empty inbox otherwise reads as "nobody replied" when the
+          truth is "nothing is looking". */}
+      {!inboundOn ? (
+        <Card className="p-4 bg-surface-1 border-white/10" data-testid="sdr-inbound-setup">
+          <p className="text-sm flex items-center gap-2">
+            <Plug className="h-4 w-4 text-graphite" /> Reply reading is off
+          </p>
+          <p className="text-xs text-graphite mt-1">
+            Nothing is checking the mailbox, so replies will not stop a sequence or
+            appear here. Switch it on once the mailbox password is set in Vercel —
+            it reads {settings.inbound_imap_mailbox || "INBOX"} without marking
+            anything as read.
+          </p>
+          <Button
+            size="sm" className="mt-3 gap-1.5" disabled={testing}
+            onClick={enableImap} data-testid="sdr-enable-inbound-btn"
+          >
+            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plug className="h-3.5 w-3.5" />}
+            Switch on reply reading
+          </Button>
+        </Card>
+      ) : (
+        <Card className="p-4 bg-surface-1 border-white/10" data-testid="sdr-inbound-status">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm flex items-center gap-2">
+                <Plug className="h-4 w-4 text-success" /> Reading replies from{" "}
+                <span className="font-mono text-xs text-ash break-all">
+                  {settings.inbound_imap_mailbox || "INBOX"}
+                </span>
+              </p>
+              <p className="text-xs text-graphite mt-1">
+                {settings.inbound_last_error ? (
+                  <span className="text-danger">
+                    Last attempt failed — {settings.inbound_last_error}
+                  </span>
+                ) : settings.inbound_last_polled_at ? (
+                  `Last checked ${formatDistanceToNow(
+                    new Date(settings.inbound_last_polled_at), { addSuffix: true })}`
+                ) : (
+                  "Not checked yet — press Test to try it now."
+                )}
+              </p>
+            </div>
+            <Button
+              size="sm" variant="outline" disabled={testing} onClick={testConnection}
+              className="border-white/10 gap-1.5" data-testid="sdr-test-inbound-btn"
+            >
+              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Test connection
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* An unroutable reply is a person waiting on an answer, so it gets a
           banner rather than a row that scrolls past. */}
