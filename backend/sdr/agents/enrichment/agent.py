@@ -24,6 +24,7 @@ from sdr.agents.base.guardrails import (
 )
 from sdr.agents.enrichment.prompts import PROMPT_VERSION, SYSTEM, build_user_prompt
 from sdr.agents.enrichment.schema import EnrichmentInput, EnrichmentOutput
+from sdr.domain import contact_extract
 from sdr.errors import NotFoundError, ProviderError, SDRError
 from sdr.providers import registry
 from sdr.repositories import companies as companies_repo
@@ -64,8 +65,28 @@ class EnrichmentAgent(Agent):
         if not payload.get("force") and company.get("enrichment_status") == "complete":
             return {"skipped": True, "reason": "already enriched", "company_id": company["id"]}
 
+        self._last_raw_html = None
         provider_fields, provider_notes = await self._from_providers(company)
         page_text, fetch_note = await self._fetch_homepage(company)
+
+        # An email read off the company's own site, deterministically. This is
+        # what makes a discovered lead reachable at all: OpenStreetMap almost
+        # never carries an address, and without one the lead cannot be
+        # qualified, cannot be emailed, and correctly scores near zero.
+        #
+        # Never inferred by the model. An address is a fact, and an invented
+        # one looks exactly like a real one - possibly a stranger's.
+        email_note = None
+        if not company.get("primary_email") and self._last_raw_html:
+            found = contact_extract.best_email(
+                self._last_raw_html, company_domain=company.get("domain")
+            )
+            if found:
+                provider_fields["primary_email"] = found
+                provider_fields["email_source"] = "website"
+                email_note = f"email found on site: {found}"
+            else:
+                email_note = "no email on the company's own domain"
 
         if page_text:
             attempts = detect_injection_attempt(page_text)
@@ -134,7 +155,7 @@ class EnrichmentAgent(Agent):
             "confidence": confidence,
             "grounded": grounded,
             "ungrounded_evidence": ungrounded,
-            "notes": [n for n in (*provider_notes, fetch_note, llm_note) if n],
+            "notes": [n for n in (*provider_notes, fetch_note, email_note, llm_note) if n],
         }
 
     # -- steps -----------------------------------------------------------------
@@ -188,7 +209,11 @@ class EnrichmentAgent(Agent):
         if "html" not in content_type and "text" not in content_type:
             return None, f"{domain} served {content_type or 'unknown content'}"
 
-        text = self._strip_html(response.text[:200_000])
+        raw = response.text[:200_000]
+        text = self._strip_html(raw)
+        # The raw markup is kept alongside the stripped text because mailto:
+        # links live in href attributes, which stripping removes.
+        self._last_raw_html = raw
         return text, None
 
     @staticmethod
