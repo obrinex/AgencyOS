@@ -247,7 +247,7 @@ export default function SDRInbox() {
           />
         )
       ) : (
-        <div className="space-y-2" data-testid="sdr-inbox-list">
+        <div className="space-y-2 stagger-in" data-testid="sdr-inbox-list">
           {items.map((reply) => {
             const config = INBOUND_CATEGORY_CONFIG[reply.category];
             return (

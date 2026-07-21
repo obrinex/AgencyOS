@@ -7,10 +7,36 @@ body {
     font-family: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Archivo's default figures are proportional, so a column of numbers
+       jitters as values change. Lining figures cost nothing and stop KPI
+       cards shifting on every refresh. */
+    font-variant-numeric: lining-nums tabular-nums;
+    text-rendering: optimizeLegibility;
 }
 
 code, .font-mono {
     font-family: "Space Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+/* Display type is set tight because Archivo is wide at large sizes and the
+   headings otherwise read as loose next to the mono labels beside them. */
+h1, h2, h3, .font-display {
+    letter-spacing: -0.018em;
+}
+
+/* Headings wrap on meaning rather than leaving one orphaned word. */
+h1, h2, h3 {
+    text-wrap: balance;
+}
+
+/* Nobody asked for motion sickness. Every animation below respects this. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 
 ::-webkit-scrollbar {
@@ -92,6 +118,29 @@ code, .font-mono {
     .text-balance {
         text-wrap: balance;
     }
+
+    /* Cards lift a hairline on hover rather than growing or shadowing -
+       shadows are explicitly out under the Swiss/high-contrast direction,
+       so the affordance is the border. */
+    .card-interactive {
+        @apply transition-colors duration-150 border-white/10;
+    }
+    .card-interactive:hover {
+        @apply border-white/25 bg-surface-1;
+    }
+
+    /* Rows entering a list stagger very slightly, so a refresh reads as
+       arriving rather than blinking. Deliberately under 300ms total: this
+       is a tool people use all day, not a landing page. */
+    .stagger-in > * {
+        animation: fade-in 0.25s ease-out both;
+    }
+    .stagger-in > *:nth-child(1)  { animation-delay: 0ms; }
+    .stagger-in > *:nth-child(2)  { animation-delay: 20ms; }
+    .stagger-in > *:nth-child(3)  { animation-delay: 40ms; }
+    .stagger-in > *:nth-child(4)  { animation-delay: 60ms; }
+    .stagger-in > *:nth-child(5)  { animation-delay: 80ms; }
+    .stagger-in > *:nth-child(n+6) { animation-delay: 100ms; }
 }
 
 @layer base {

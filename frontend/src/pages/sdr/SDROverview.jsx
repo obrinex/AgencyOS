@@ -22,9 +22,9 @@ const STAGE_LABELS = {
 
 function Kpi({ label, value, hint, testId }) {
   return (
-    <Card className="p-4 bg-surface-1 border-white/10" data-testid={testId}>
+    <Card className="p-4 bg-surface-1 card-interactive" data-testid={testId}>
       <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-carbon">{label}</p>
-      <p className="font-display text-2xl font-semibold tracking-tight mt-1.5">{value}</p>
+      <p className="font-display text-2xl font-semibold tracking-tight mt-1.5 tabular-nums">{value}</p>
       {hint && <p className="text-xs text-graphite mt-0.5">{hint}</p>}
     </Card>
   );
@@ -37,6 +37,7 @@ export default function SDROverview() {
   const [data, setData] = useState(null);
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
   const [killDialog, setKillDialog] = useState(false);
   const [killReason, setKillReason] = useState("");
 
@@ -58,6 +59,38 @@ export default function SDROverview() {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runLeadGen = async () => {
+    setRunning(true);
+    try {
+      const { data } = await api.post("/sdr/run");
+      const did = [
+        data.researched ? `researched ${data.researched} lead${data.researched === 1 ? "" : "s"}` : null,
+        data.drafted ? `drafted ${data.drafted} email${data.drafted === 1 ? "" : "s"}` : null,
+        data.sent ? `queued ${data.sent} send${data.sent === 1 ? "" : "s"}` : null,
+        data.replies ? `read ${data.replies} repl${data.replies === 1 ? "y" : "ies"}` : null,
+      ].filter(Boolean);
+
+      if (did.length) {
+        toast.success(`Done — ${did.join(", ")}.`, {
+          description: data.awaiting_approval
+            ? `${data.awaiting_approval} email${data.awaiting_approval === 1 ? "" : "s"} waiting for your approval on the Outreach page.`
+            : data.still_queued
+            ? `${data.still_queued} job${data.still_queued === 1 ? "" : "s"} still working — run again in a minute.`
+            : undefined,
+        });
+      } else if (data.still_queued) {
+        toast.info(`Nothing finished yet — ${data.still_queued} job${data.still_queued === 1 ? "" : "s"} still in progress.`);
+      } else {
+        toast.info("Nothing to do. Add leads on the Lead Database page first.");
+      }
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -121,8 +154,8 @@ export default function SDROverview() {
   return (
     <div className="p-6 space-y-5" data-testid="sdr-overview-page">
       <PageHeader
-        title="AI SDR"
-        description="Autonomous prospecting — discovery, research, scoring and qualification"
+        title="Lead Gen Agent"
+        description="Finds businesses, researches them, and writes the emails. You approve."
         actions={
           isAdmin && (
             <div className="flex items-center gap-3">
@@ -152,6 +185,36 @@ export default function SDROverview() {
           )
         }
       />
+
+      {/* The one button. Everything below it is detail; this is the verb. */}
+      <Card
+        className="p-5 bg-surface-1 border-white/10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+        data-testid="sdr-run-card"
+      >
+        <div className="min-w-0">
+          <p className="font-display text-sm font-semibold">Run the agent now</p>
+          <p className="text-xs text-graphite mt-1 max-w-xl">
+            It works through everything due: researching new leads, scoring them,
+            and writing emails for whoever qualifies. It runs on its own every few
+            minutes — this is for when you would rather not wait. Give it up to a
+            minute; anything unfinished keeps going in the background.
+            {settings.module_enabled
+              ? " Nothing is emailed without your approval."
+              : " Turn the Module switch on first."}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          disabled={running || !settings.module_enabled || settings.kill_switch}
+          onClick={runLeadGen}
+          data-testid="sdr-run-btn"
+          className="gap-2 shrink-0 transition-transform duration-150 active:scale-[0.97]"
+        >
+          {running
+            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Working…</>
+            : <><Bot className="h-3.5 w-3.5" /> Run Lead Gen</>}
+        </Button>
+      </Card>
 
       {settings.kill_switch && (
         <Card className="p-4 bg-danger/10 border-danger/20" data-testid="sdr-kill-switch-banner">

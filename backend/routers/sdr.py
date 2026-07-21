@@ -1293,6 +1293,67 @@ async def cancel_job(job_id: str, user: dict = Depends(require_sdr)):
         raise _http(exc)
 
 
+@router.post("/run")
+async def run_lead_gen(user: dict = Depends(require_sdr)):
+    """One button: do everything that is due, and say what happened.
+
+    The pipeline already runs itself every few minutes. This exists because
+    "wait and see" is a poor answer when someone has just imported leads and
+    wants to know the thing works - and because the previous manual path was
+    opening each lead and pressing a button on it.
+
+    Several tick/drain rounds rather than one: the research chain staggers its
+    steps, so a single round starts work it does not finish, and the caller
+    would see "0 emails drafted" on a run that was progressing normally.
+    Bounded by a wall-clock budget because Vercel gives the whole request 60
+    seconds, and returning a partial, honest report beats a timeout.
+    """
+    import asyncio
+    import time
+
+    allowed, reason = await _module_ready()
+    if not allowed:
+        raise HTTPException(status_code=409, detail=reason)
+
+    started = time.monotonic()
+    # Twelve, not forty. The pipeline continues on the scheduler either way,
+    # so a longer budget buys a slightly fuller report at the cost of making
+    # someone watch a spinner - and a button that hangs for forty seconds
+    # reads as broken however much work it is doing. Anything unfinished is
+    # reported as still-queued rather than waited for.
+    budget_seconds = 12
+    totals = {"researched": 0, "drafted": 0, "sent": 0, "replies": 0, "rounds": 0}
+
+    while time.monotonic() - started < budget_seconds:
+        tick = await campaigns_service.tick()
+        drained = await jobs_service.drain()
+        totals["rounds"] += 1
+        totals["researched"] += tick.get("research_leads") or 0
+        totals["drafted"] += tick.get("personalization_queued") or 0
+        totals["sent"] += tick.get("sends_queued") or 0
+        totals["replies"] += tick.get("replies_ingested") or 0
+
+        if not drained.get("processed") and not tick.get("research_leads"):
+            break
+        # The chain staggers steps ~90s apart, so a tight loop would spin
+        # without work becoming due. One short pause keeps this responsive
+        # without burning the budget.
+        await asyncio.sleep(0.5)
+
+    from database import db as _db
+    from sdr.collections import MESSAGES
+
+    awaiting = await _db[MESSAGES].count_documents({"status": "awaiting_approval"})
+    queued = await jobs_service.stats()
+
+    return {
+        **totals,
+        "awaiting_approval": awaiting,
+        "still_queued": queued.get("queued", 0),
+        "elapsed_seconds": round(time.monotonic() - started, 1),
+    }
+
+
 @router.post("/jobs/drain")
 async def drain_jobs_manually(user: dict = Depends(require_admin)):
     """Tick the campaigns and drain the queue on demand.
