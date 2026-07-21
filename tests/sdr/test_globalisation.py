@@ -131,3 +131,62 @@ def test_no_market_literals_outside_the_config_registry(label):
         f"'{label}' must live in sdr/config/, not business logic:\n"
         + "\n".join(offenders)
     )
+
+
+# --- Geographic reach ----------------------------------------------------------
+
+def test_the_shipped_countries_cover_the_main_english_markets():
+    from sdr.config.countries import supported_country_codes
+
+    codes = set(supported_country_codes())
+    for expected in ("IN", "US", "GB", "AE", "AU", "NZ", "SG", "MY", "IE"):
+        assert expected in codes, f"{expected} should be supported"
+
+
+def test_the_uae_is_not_silently_blocked():
+    """Regression: AE shipped as a supported country but pointed at the
+    DEFAULT compliance profile, so every UAE lead was hard-disqualified."""
+    from sdr.config.countries import is_cold_outreach_permitted
+
+    permitted, _ = is_cold_outreach_permitted("AE", "email")
+    assert permitted is True
+
+
+def test_an_unknown_country_is_blocked_until_explicitly_allowed():
+    from sdr.config.countries import is_cold_outreach_permitted
+
+    assert is_cold_outreach_permitted("BR", "email")[0] is False
+    assert is_cold_outreach_permitted("BR", "email", allow_unlisted=True)[0] is True
+
+
+def test_allowing_unlisted_countries_cannot_unblock_a_known_strict_one():
+    """The switch exists for countries this system does not model. Canada and
+    Germany are modelled, and both require prior consent for email - a blanket
+    override that silently ignored that would be worse than no switch."""
+    from sdr.config.countries import is_cold_outreach_permitted
+
+    for code in ("CA", "DE"):
+        assert is_cold_outreach_permitted(code, "email", allow_unlisted=True)[0] is False
+
+
+def test_every_country_points_at_a_profile_that_exists():
+    """A typo in a compliance_profile key would silently fall back to DEFAULT
+    and block that whole country - which is exactly how the UAE broke."""
+    from sdr.config.countries import COMPLIANCE_PROFILES, COUNTRIES
+
+    for code, country in COUNTRIES.items():
+        key = country["compliance_profile"]
+        assert key in COMPLIANCE_PROFILES, f"{code} points at unknown profile {key}"
+
+
+def test_every_country_has_a_usable_timezone_and_business_hours():
+    from zoneinfo import ZoneInfo
+
+    from sdr.config.countries import COUNTRIES
+
+    for code, country in COUNTRIES.items():
+        assert country["timezones"], f"{code} has no timezone"
+        ZoneInfo(country["timezones"][0])          # raises if invalid
+        hours = country["business_hours"]
+        assert hours["days"], f"{code} has no working days"
+        assert hours["start"] < hours["end"], f"{code} has inverted hours"

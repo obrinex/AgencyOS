@@ -129,10 +129,15 @@ class PersonalizationAgent(Agent):
         if stop:
             return {"stopped": True, "reason": stop, "enrollment_id": enrollment_id}
 
+        settings = await settings_repo.get_settings()
+
         # Compliance is decided before spending a token: a lead we may not
         # lawfully email gets stopped here, not discovered at send time.
         country_code = company.get("country_code")
-        permitted, why = is_cold_outreach_permitted(country_code, "email")
+        permitted, why = is_cold_outreach_permitted(
+            country_code, "email",
+            allow_unlisted=settings.get("allow_unlisted_countries", False),
+        )
         if not permitted:
             await campaigns_repo.stop_enrollment(enrollment_id, "compliance")
             ctx.flag("compliance_stop", why)
@@ -148,7 +153,6 @@ class PersonalizationAgent(Agent):
             return {"skipped": True, "reason": "draft already exists",
                     "message_id": existing["id"]}
 
-        settings = await settings_repo.get_settings()
         draft = await self.complete_validated(
             system=SYSTEM,
             user=build_user_prompt(

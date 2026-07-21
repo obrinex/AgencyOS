@@ -69,6 +69,100 @@ COMPLIANCE_PROFILES = {
                  "State laws (e.g. Florida, Oklahoma) are stricter than federal.",
     },
     # Everything unlisted. Deliberately conservative: assume consent is needed.
+    # Australia / New Zealand - Spam Act 2003 and the Unsolicited Electronic
+    # Messages Act. Both allow B2B email on inferred consent where the address
+    # is published for business purposes, provided identity and a working
+    # unsubscribe are present.
+    "SPAM_ACT": {
+        "key": "SPAM_ACT",
+        "label": "AU/NZ - Spam Act & UEM Act",
+        "b2b_cold_outreach_permitted": True,
+        "lawful_bases": ["inferred_consent", "consent"],
+        "consent_required_by_channel": {
+            "email": False, "whatsapp": True, "sms": True, "voice": True, "linkedin": False,
+        },
+        "footer_requires_identity": True,
+        "footer_requires_postal_address": True,
+        "footer_requires_unsubscribe": True,
+        "opt_out_sla_hours": 120,
+        "data_retention_days": 730,
+        "notes": "Inferred consent applies only where the address is published without a "
+                 "statement refusing unsolicited mail. Honour that statement if present.",
+    },
+    # Singapore / Malaysia - PDPA plus the Spam Control Act. Opt-out regimes
+    # for business addresses; SMS additionally hits the Do Not Call registry.
+    "PDPA_SEA": {
+        "key": "PDPA_SEA",
+        "label": "SG/MY - PDPA & Spam Control",
+        "b2b_cold_outreach_permitted": True,
+        "lawful_bases": ["legitimate_interest", "consent"],
+        "consent_required_by_channel": {
+            "email": False, "whatsapp": True, "sms": True, "voice": True, "linkedin": False,
+        },
+        "footer_requires_identity": True,
+        "footer_requires_postal_address": True,
+        "footer_requires_unsubscribe": True,
+        "opt_out_sla_hours": 240,
+        "data_retention_days": 730,
+        "notes": "Singapore requires an <ADV> style label on some marketing messages and "
+                 "checks against the Do Not Call registry for phone and SMS.",
+    },
+    # Gulf states - broadly permissive for B2B, with local telecom rules on
+    # SMS and voice.
+    "GCC": {
+        "key": "GCC",
+        "label": "Gulf states - B2B permitted",
+        "b2b_cold_outreach_permitted": True,
+        "lawful_bases": ["legitimate_interest", "consent"],
+        "consent_required_by_channel": {
+            "email": False, "whatsapp": True, "sms": True, "voice": True, "linkedin": False,
+        },
+        "footer_requires_identity": True,
+        "footer_requires_postal_address": True,
+        "footer_requires_unsubscribe": True,
+        "opt_out_sla_hours": 72,
+        "data_retention_days": 730,
+        "notes": "Telecom regulators license bulk SMS senders locally; email is the safe channel.",
+    },
+    # Canada - CASL. Deliberately blocked for email: CASL requires express or
+    # a narrow implied consent, penalties are severe, and "we found the
+    # address on their website" is not a defence on its own. This is the one
+    # major English-speaking market where cold email is genuinely unsafe.
+    "CASL": {
+        "key": "CASL",
+        "label": "Canada - CASL (express consent required)",
+        "b2b_cold_outreach_permitted": True,
+        "lawful_bases": ["consent"],
+        "consent_required_by_channel": {
+            "email": True, "whatsapp": True, "sms": True, "voice": True, "linkedin": False,
+        },
+        "footer_requires_identity": True,
+        "footer_requires_postal_address": True,
+        "footer_requires_unsubscribe": True,
+        "opt_out_sla_hours": 240,
+        "data_retention_days": 1095,
+        "notes": "CASL requires express consent, or implied consent from an existing business "
+                 "relationship or a conspicuously published address with no refusal statement. "
+                 "Blocked here by default because the implied-consent test is easy to fail.",
+    },
+    # Germany, Austria and similar - UWG requires prior opt-in for email, B2B
+    # included. Blocked rather than risked.
+    "UWG": {
+        "key": "UWG",
+        "label": "DE/AT - UWG (opt-in required)",
+        "b2b_cold_outreach_permitted": True,
+        "lawful_bases": ["consent"],
+        "consent_required_by_channel": {
+            "email": True, "whatsapp": True, "sms": True, "voice": True, "linkedin": False,
+        },
+        "footer_requires_identity": True,
+        "footer_requires_postal_address": True,
+        "footer_requires_unsubscribe": True,
+        "opt_out_sla_hours": 24,
+        "data_retention_days": 730,
+        "notes": "Unsolicited commercial email requires prior consent, and competitors can "
+                 "issue cease-and-desist letters with costs attached.",
+    },
     "DEFAULT": {
         "key": "DEFAULT",
         "label": "Unlisted country - conservative default",
@@ -182,8 +276,151 @@ COUNTRIES = {
         "business_hours": {"start": "09:00", "end": "18:00", "days": [0, 1, 2, 3, 4]},
         "industry_classification": "provider",
         "registration_id_label": "Trade licence number",
-        "compliance_profile": "DEFAULT",
+        # Was DEFAULT, which silently blocked every UAE lead on compliance
+        # despite the country being shipped as supported.
+        "compliance_profile": "GCC",
         "preferred_channels": ["whatsapp", "email"],
+        "preferred_data_providers": ["google_places", "osm_overpass"],
+    },
+    "AU": {
+        "code": "AU",
+        "name": "Australia",
+        "currency": "AUD",
+        "currency_display": "western",
+        "locales": ["en-AU"],
+        "languages": ["en"],
+        "timezones": ["Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane",
+                      "Australia/Adelaide", "Australia/Perth"],
+        "phone_code": "+61",
+        "phone_nsn_length": 9,
+        "business_hours": {"start": "09:00", "end": "17:00", "days": [0, 1, 2, 3, 4]},
+        "industry_classification": "anzsic",
+        "registration_id_label": "ABN",
+        "compliance_profile": "SPAM_ACT",
+        "preferred_channels": ["email", "linkedin", "voice"],
+        "preferred_data_providers": ["google_places", "osm_overpass"],
+    },
+    "NZ": {
+        "code": "NZ",
+        "name": "New Zealand",
+        "currency": "NZD",
+        "currency_display": "western",
+        "locales": ["en-NZ"],
+        "languages": ["en"],
+        "timezones": ["Pacific/Auckland"],
+        "phone_code": "+64",
+        "phone_nsn_length": 9,
+        "business_hours": {"start": "09:00", "end": "17:00", "days": [0, 1, 2, 3, 4]},
+        "industry_classification": "anzsic",
+        "registration_id_label": "NZBN",
+        "compliance_profile": "SPAM_ACT",
+        "preferred_channels": ["email", "linkedin", "voice"],
+        "preferred_data_providers": ["google_places", "osm_overpass"],
+    },
+    "SG": {
+        "code": "SG",
+        "name": "Singapore",
+        "currency": "SGD",
+        "currency_display": "western",
+        "locales": ["en-SG"],
+        "languages": ["en", "zh", "ms", "ta"],
+        "timezones": ["Asia/Singapore"],
+        "phone_code": "+65",
+        "phone_nsn_length": 8,
+        "business_hours": {"start": "09:00", "end": "18:00", "days": [0, 1, 2, 3, 4]},
+        "industry_classification": "ssic",
+        "registration_id_label": "UEN",
+        "compliance_profile": "PDPA_SEA",
+        "preferred_channels": ["email", "whatsapp", "linkedin"],
+        "preferred_data_providers": ["google_places", "osm_overpass"],
+    },
+    "MY": {
+        "code": "MY",
+        "name": "Malaysia",
+        "currency": "MYR",
+        "currency_display": "western",
+        "locales": ["en-MY", "ms-MY"],
+        "languages": ["ms", "en", "zh", "ta"],
+        "timezones": ["Asia/Kuala_Lumpur"],
+        "phone_code": "+60",
+        "phone_nsn_length": 9,
+        "business_hours": {"start": "09:00", "end": "18:00", "days": [0, 1, 2, 3, 4]},
+        "industry_classification": "msic",
+        "registration_id_label": "SSM number",
+        "compliance_profile": "PDPA_SEA",
+        "preferred_channels": ["whatsapp", "email"],
+        "preferred_data_providers": ["google_places", "osm_overpass"],
+    },
+    "IE": {
+        "code": "IE",
+        "name": "Ireland",
+        "currency": "EUR",
+        "currency_display": "western",
+        "locales": ["en-IE"],
+        "languages": ["en", "ga"],
+        "timezones": ["Europe/Dublin"],
+        "phone_code": "+353",
+        "phone_nsn_length": 9,
+        "business_hours": {"start": "09:00", "end": "17:30", "days": [0, 1, 2, 3, 4]},
+        "industry_classification": "nace",
+        "registration_id_label": "CRO number",
+        "compliance_profile": "GDPR",
+        "preferred_channels": ["email", "linkedin", "voice"],
+        "preferred_data_providers": ["google_places", "osm_overpass"],
+    },
+    "SA": {
+        "code": "SA",
+        "name": "Saudi Arabia",
+        "currency": "SAR",
+        "currency_display": "western",
+        "locales": ["ar-SA", "en-SA"],
+        "languages": ["ar", "en"],
+        "timezones": ["Asia/Riyadh"],
+        "phone_code": "+966",
+        "phone_nsn_length": 9,
+        "business_hours": {"start": "09:00", "end": "18:00", "days": [6, 0, 1, 2, 3]},
+        "industry_classification": "provider",
+        "registration_id_label": "CR number",
+        "compliance_profile": "GCC",
+        "preferred_channels": ["whatsapp", "email"],
+        "preferred_data_providers": ["google_places", "osm_overpass"],
+    },
+    "CA": {
+        "code": "CA",
+        "name": "Canada",
+        "currency": "CAD",
+        "currency_display": "western",
+        "locales": ["en-CA", "fr-CA"],
+        "languages": ["en", "fr"],
+        "timezones": ["America/Toronto", "America/Winnipeg", "America/Edmonton",
+                      "America/Vancouver"],
+        "phone_code": "+1",
+        "phone_nsn_length": 10,
+        "business_hours": {"start": "09:00", "end": "17:00", "days": [0, 1, 2, 3, 4]},
+        "industry_classification": "naics",
+        "registration_id_label": "Business Number",
+        # Listed so Canadian leads are recognised and given a clear reason,
+        # rather than failing as an unknown country. Email stays blocked -
+        # see the CASL profile.
+        "compliance_profile": "CASL",
+        "preferred_channels": ["linkedin", "voice"],
+        "preferred_data_providers": ["google_places", "osm_overpass"],
+    },
+    "DE": {
+        "code": "DE",
+        "name": "Germany",
+        "currency": "EUR",
+        "currency_display": "western",
+        "locales": ["de-DE"],
+        "languages": ["de", "en"],
+        "timezones": ["Europe/Berlin"],
+        "phone_code": "+49",
+        "phone_nsn_length": 11,
+        "business_hours": {"start": "09:00", "end": "17:00", "days": [0, 1, 2, 3, 4]},
+        "industry_classification": "nace",
+        "registration_id_label": "Handelsregisternummer",
+        "compliance_profile": "UWG",
+        "preferred_channels": ["linkedin", "voice"],
         "preferred_data_providers": ["google_places", "osm_overpass"],
     },
 }
@@ -230,18 +467,32 @@ def get_holidays(country_code: str | None, year: int) -> list:
     return list(entry.get("fixed", [])) + list(entry.get("by_year", {}).get(year, []))
 
 
-def is_cold_outreach_permitted(country_code: str | None, channel: str) -> tuple:
+def is_cold_outreach_permitted(country_code: str | None, channel: str,
+                               allow_unlisted: bool = False) -> tuple:
     """Whether cold outreach may be sent. Returns (permitted, reason).
 
     The send pre-flight calls this before anything else. An unlisted country
-    returns False, which is the point of the DEFAULT profile - we would rather
-    block a legitimate send than make an unlawful one.
+    returns False by default - we would rather block a legitimate send than
+    make an unlawful one.
+
+    `allow_unlisted` lets an operator opt into countries with no shipped
+    profile, at their own risk. It is off by default and deliberately does not
+    override a country we *do* have a profile for: Canada and Germany are
+    listed precisely because their rules are known and stricter, and a blanket
+    "allow everything" switch that silently unblocked them would be worse than
+    no switch at all.
     """
     profile = get_compliance_profile(country_code)
     if not profile["b2b_cold_outreach_permitted"]:
+        if allow_unlisted:
+            return True, (
+                f"No profile for '{country_code or 'unknown'}' - permitted because "
+                "unlisted countries are allowed in settings. Verify local law yourself."
+            )
         return False, (
             f"No compliance profile is configured for country '{country_code or 'unknown'}'. "
-            "Cold outreach is blocked until one is added."
+            "Cold outreach is blocked until one is added, or until unlisted "
+            "countries are allowed in AI SDR settings."
         )
     if profile["consent_required_by_channel"].get(channel, True):
         return False, (

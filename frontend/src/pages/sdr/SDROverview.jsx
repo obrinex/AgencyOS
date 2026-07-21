@@ -61,6 +61,19 @@ export default function SDROverview() {
     }
   };
 
+  const saveSetting = async (patch, message) => {
+    setSaving(true);
+    try {
+      const { data: updated } = await api.put("/sdr/settings", patch);
+      setSettings(updated);
+      toast.success(message);
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const toggleChannel = async (channel, on) => {
     setSaving(true);
     try {
@@ -287,6 +300,32 @@ export default function SDROverview() {
             leaves until a campaign runs, a draft is approved, and Outreach is
             switched from Simulate to LIVE.
           </p>
+
+          {isAdmin && (
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-graphite">Allow unlisted countries</span>
+                <Switch
+                  id="sdr-allow-unlisted-toggle"
+                  data-testid="sdr-allow-unlisted-toggle"
+                  checked={!!settings.allow_unlisted_countries}
+                  disabled={saving}
+                  onCheckedChange={(next) => saveSetting(
+                    { allow_unlisted_countries: next },
+                    next
+                      ? "Unlisted countries allowed — check local law yourself"
+                      : "Unlisted countries blocked again"
+                  )}
+                />
+              </div>
+              <p className="text-xs text-carbon mt-2">
+                Leads in countries with no shipped compliance profile are blocked,
+                because their cold-outreach law is not modelled here. Turning this on
+                says you have checked it yourself. It cannot unblock Canada or
+                Germany — both require prior consent for email by law.
+              </p>
+            </div>
+          )}
         </Card>
       </div>
 

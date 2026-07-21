@@ -111,7 +111,10 @@ async def check(*, recipient_email: str, country_code: str | None,
     # 4. Jurisdiction. Consulted for the *recipient's* country, and an
     #    unlisted country is refused by design rather than defaulting to
     #    whatever is most permissive.
-    permitted, compliance_reason = is_cold_outreach_permitted(country_code, channel)
+    permitted, compliance_reason = is_cold_outreach_permitted(
+        country_code, channel,
+        allow_unlisted=settings.get("allow_unlisted_countries", False),
+    )
     if not permitted:
         record("compliance", False, compliance_reason)
         return refuse("compliance_blocked", compliance_reason)

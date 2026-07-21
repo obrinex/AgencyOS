@@ -67,6 +67,17 @@ DEFAULTS = {
     "daily_llm_spend_cap_usd": 5.0,
     "default_country_code": None,
 
+    # Allow leads in countries with no shipped compliance profile.
+    #
+    # Off by default: an unlisted country is one whose cold-outreach law this
+    # system does not model, and blocking is the safer failure. Turning it on
+    # is an explicit statement that you have checked the law yourself.
+    #
+    # It does NOT unblock countries that are listed and restricted - Canada
+    # (CASL) and Germany (UWG) require prior consent for email, and a blanket
+    # override that silently ignored that would be worse than no switch.
+    "allow_unlisted_countries": False,
+
     # Where replies should land. Deliberately None by default rather than a
     # guessed `replies@<domain>`: a Reply-To pointing at a mailbox that does
     # not exist bounces the prospect's answer, which is worse than having no

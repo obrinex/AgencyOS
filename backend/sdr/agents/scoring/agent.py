@@ -18,6 +18,7 @@ from database import db
 from sdr.agents.base.agent import Agent, AgentContext
 from sdr.collections import SUPPRESSION
 from sdr.config.countries import is_cold_outreach_permitted
+from sdr.repositories import settings as settings_repo
 from sdr.domain import scoring as scoring_domain
 from sdr.domain.normalize import normalize_domain, normalize_email
 from sdr.errors import NotFoundError, ValidationError
@@ -113,7 +114,8 @@ class LeadScoringAgent(Agent):
         }
 
 
-async def _hard_fails(lead: dict, company: dict, contacts: list) -> list:
+async def _hard_fails(lead: dict, company: dict, contacts: list,
+                      allow_unlisted: bool = False) -> list:
     """Rules that disqualify regardless of score."""
     fails = []
 
@@ -145,7 +147,9 @@ async def _hard_fails(lead: dict, company: dict, contacts: list) -> list:
     # Compliance is checked against the *recipient's* country. An unlisted
     # country has no profile, so cold outreach is refused by design.
     country = company.get("country_code") or lead.get("country_code")
-    permitted, reason = is_cold_outreach_permitted(country, "email")
+    permitted, reason = is_cold_outreach_permitted(
+        country, "email", allow_unlisted=allow_unlisted
+    )
     if not permitted:
         fails.append(f"compliance: {reason}")
 
@@ -173,7 +177,11 @@ class QualificationAgent(Agent):
 
         lead, company, contacts, signals, _ = await _gather(lead_id)
 
-        fails = await _hard_fails(lead, company, contacts)
+        settings = await settings_repo.get_settings()
+        fails = await _hard_fails(
+            lead, company, contacts,
+            allow_unlisted=settings.get("allow_unlisted_countries", False),
+        )
         if fails:
             ctx.flag("hard_disqualification", fails)
 
