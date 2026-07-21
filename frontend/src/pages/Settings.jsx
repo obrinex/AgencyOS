@@ -4,6 +4,7 @@ import api, { formatApiError } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -320,6 +321,23 @@ export default function Settings() {
 
         <TabsContent value="company" className="mt-4 max-w-md space-y-3">
           <div className="space-y-1"><Label>Company Name</Label><Input data-testid="settings-company-name" value={company.company_name || ""} onChange={(e) => setCompany({ ...company, company_name: e.target.value })} className="bg-surface-1 border-white/10" /></div>
+          <div className="space-y-1">
+            <Label>Postal Address</Label>
+            <Textarea
+              data-testid="settings-company-address"
+              value={company.address || ""}
+              onChange={(e) => setCompany({ ...company, address: e.target.value })}
+              rows={3}
+              placeholder="Street, City, State, PIN"
+              className="bg-surface-1 border-white/10 text-sm"
+            />
+            <p className="text-xs text-graphite mt-1">
+              Appears in the footer of every outreach email. Commercial email law in
+              most countries requires a real physical address, so the AI SDR
+              <span className="text-warning"> will refuse to send without one</span> and
+              park the message for review instead.
+            </p>
+          </div>
           <div className="space-y-1"><Label>Custom Domain</Label><Input data-testid="settings-custom-domain" value={company.custom_domain || ""} onChange={(e) => setCompany({ ...company, custom_domain: e.target.value })} placeholder="app.youragency.com" className="bg-surface-1 border-white/10" /></div>
           <div className="space-y-1"><Label>Currency</Label>
             <Select value={company.currency || "INR"} onValueChange={(v) => setCompany({ ...company, currency: v })}>
