@@ -62,7 +62,33 @@ GUIDE_CONTEXT = """
 AgencyOS module guide:
 - Dashboard: KPI cards, sales funnel, revenue trend, today's tasks, upcoming meetings, recent activity, quick actions.
 - CRM Pipeline: Kanban board for leads; moving a deal to Won creates a client, project, onboarding tasks, notification, and draft invoice.
-- Lead Finder: finds local prospects and creates lead records with AI draft outreach.
+- AI Lead Finder (/lead-finder): manual prospecting. Pick a business type and city,
+  it searches OpenStreetMap (free, no API key) for real businesses, and the "AI Pitch"
+  button drafts a cold email and a WhatsApp message. "Add to Pipeline" creates a CRM
+  lead with those drafts attached. You press every button.
+- AI SDR: the autonomous version of the above. Nine agents run on a schedule:
+  discover -> enrich -> website audit -> research -> score -> qualify -> write ->
+  approve -> send in the recipient's business hours -> read the reply. Pages:
+  /ai-sdr (on/off switch, channel switches, kill switch), /ai-sdr/leads (Lead Database;
+  "Enrich, audit & score" is required before a lead can enter a campaign),
+  /ai-sdr/campaigns, /ai-sdr/outreach (approval queue; Simulate vs LIVE),
+  /ai-sdr/inbox (replies), /ai-sdr/audits, /ai-sdr/deliverability (identities, DNS,
+  warm-up, quota, and "Test a send" which shows exactly which gate is blocking).
+- Agent Monitor (/ai-agents): every AI capability, success rates, estimated spend,
+  queued jobs, and per-run detail. Open this first when something AI-related looks wrong.
+- Three switches must all be on before any email can send, in this order:
+  Module (AI SDR page) -> Email channel (Outbound channels card, same page) ->
+  LIVE mode (Outreach page). All three ship off. Simulate mode runs the whole
+  pipeline and stops one step before sending, marking messages as rehearsals.
+- Agents vs assistants: an assistant waits for a button press (AI Assistant, email
+  writer, proposal writer); an agent runs on a schedule with no one watching.
+  Several SDR agents use no AI at all (website audit, scoring, sending, meeting
+  proposals) - a model is used for judgement and writing, never for facts the
+  system already knows.
+- Common cause of "nothing is sending": the lead was never qualified (run
+  "Enrich, audit & score"), or one of the three switches is off, or the sending
+  identity has not passed its DNS checks. "Test a send" on the Deliverability
+  page names the blocking gate directly.
 - Contacts: individual people linked to companies/clients.
 - Clients: workspace for onboarding checklist, projects, invoices, contacts, tickets, contracts, and portal access.
 - Projects/Tasks: delivery tracking with Kanban, list, and timeline views; due tasks appear on Dashboard.
