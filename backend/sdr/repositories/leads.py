@@ -180,6 +180,41 @@ async def transition_stage(lead_id: str, to_stage: str, *, actor: str = "system"
     return await get_lead(lead_id)
 
 
+async def backfill_contact_from_company(company_id: str, *, email: str | None = None,
+                                        phone: str | None = None) -> int:
+    """Copy a newly-found contact detail onto this company's leads.
+
+    A lead is created from a company snapshot, so it carries whatever contact
+    details existed *at that moment*. Discovery rarely supplies an email, and
+    enrichment finds one later by reading the company's website - but that
+    lands on the company record only.
+
+    Without this the two halves never meet: the company has an address, the
+    lead does not, and enrolment refuses it with "no email address" while the
+    UI shows an email on the very same business. Only fills blanks, so a
+    human-entered address is never overwritten.
+    """
+    patch = {}
+    if email:
+        patch["email"] = email
+    if phone:
+        patch["phone"] = phone
+    if not patch:
+        return 0
+
+    result = await db.leads.update_many(
+        {
+            "sdr_company_id": company_id,
+            "deleted_at": None,
+            "$or": [{field: None} for field in patch] + [
+                {field: ""} for field in patch
+            ],
+        },
+        {"$set": stamp_update(patch)},
+    )
+    return result.modified_count
+
+
 async def apply_score(lead_id: str, scored: dict) -> dict:
     """Persist a scoring result and its explainable breakdown."""
     await db.leads.update_one(

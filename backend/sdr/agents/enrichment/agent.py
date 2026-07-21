@@ -28,6 +28,7 @@ from sdr.domain import contact_extract
 from sdr.errors import NotFoundError, ProviderError, SDRError
 from sdr.providers import registry
 from sdr.repositories import companies as companies_repo
+from sdr.repositories import leads as leads_repo
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,16 @@ class EnrichmentAgent(Agent):
 
         await companies_repo.update_company(company["id"], patch)
 
+        # A lead was created from a snapshot of this company, so it holds
+        # whatever contact details existed then - usually none. Push anything
+        # newly found down onto it, or the lead stays unenrollable ("no email
+        # address") while the company record plainly shows one.
+        backfilled = await leads_repo.backfill_contact_from_company(
+            company["id"],
+            email=patch.get("primary_email") or company.get("primary_email"),
+            phone=patch.get("phone_e164") or company.get("phone_e164"),
+        )
+
         return {
             "company_id": company["id"],
             "enrichment_status": status,
@@ -155,6 +166,7 @@ class EnrichmentAgent(Agent):
             "confidence": confidence,
             "grounded": grounded,
             "ungrounded_evidence": ungrounded,
+            "leads_backfilled": backfilled,
             "notes": [n for n in (*provider_notes, fetch_note, email_note, llm_note) if n],
         }
 
