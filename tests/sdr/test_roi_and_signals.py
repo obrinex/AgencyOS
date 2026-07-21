@@ -112,9 +112,17 @@ def test_benchmarks_always_carry_version_and_source():
 
 
 def test_region_multiplier_is_applied():
-    india = benchmarks.resolve("dental", "IN")["avg_deal_value"]
-    us = benchmarks.resolve("dental", "US")["avg_deal_value"]
-    assert india < us
+    """Compared in one currency, not across two.
+
+    This test used to read `india < us` on the raw figures, which only held
+    because both were quoted in USD - the rupee conversion was missing. With
+    the conversion in place that comparison is rupees against dollars, which
+    is meaningless, so the FX step is divided back out.
+    """
+    india = benchmarks.resolve("dental", "IN")
+    us = benchmarks.resolve("dental", "US")
+    india_in_usd = india["avg_deal_value"] / india["currency_rate"]
+    assert india_in_usd < us["avg_deal_value"]
 
 
 # --- ROI ----------------------------------------------------------------------
@@ -236,3 +244,49 @@ def test_the_no_website_lead_outscores_the_one_we_know_nothing_about():
                          detected_signals=signals.detect({}))
 
     assert confirmed["score"] > unknown["score"]
+
+
+# --- Currency ------------------------------------------------------------------
+#
+# Regression guard. `avg_deal_value` is quoted in USD and REGION_MULTIPLIER is a
+# purchasing-power adjustment, not an exchange rate. For a long while the result
+# was relabelled as the local currency without ever being converted, so an
+# Indian cafe reported an average deal of "INR 6.3" - the dollar figure with a
+# rupee sign on it. Every ROI estimate outside the US was out by the FX rate.
+
+def test_local_figures_are_actually_converted_not_just_relabelled():
+    from sdr.config import benchmarks
+
+    india = benchmarks.resolve("cafe", "IN")
+    assert india["currency"] == "INR"
+    # A cafe order in India is a few hundred rupees, not six.
+    assert 200 < india["avg_deal_value"] < 2000, india["avg_deal_value"]
+
+
+def test_us_figures_are_left_alone():
+    from sdr.config import benchmarks
+
+    usa = benchmarks.resolve("dental", "US")
+    assert usa["currency"] == "USD"
+    assert usa["avg_deal_value"] == 900
+    assert usa["currency_rate"] == 1.0
+
+
+def test_purchasing_power_still_applies_on_top_of_conversion():
+    """Both adjustments are needed and they are not the same thing: India is
+    cheaper than the US *and* uses a different currency."""
+    from sdr.config import benchmarks
+
+    india = benchmarks.resolve("dental", "IN")
+    naive = 900 * benchmarks.CURRENCY_RATE["INR"]      # converted, not adjusted
+    assert india["avg_deal_value"] < naive
+    assert india["region_multiplier"] == 0.35
+
+
+def test_the_rupee_rate_matches_the_apps_own_fallback():
+    """Two hardcoded USD/INR rates that can drift apart is a bug waiting to
+    happen, so they are asserted equal."""
+    from sdr.config import benchmarks
+    import fx
+
+    assert benchmarks.CURRENCY_RATE["INR"] == fx.FALLBACK_USD_INR

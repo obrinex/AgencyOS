@@ -138,7 +138,19 @@ async def _seed_lead(index: int = 1):
     listed = (await companies_repo.list_companies(limit=200))["items"]
     company = next(c for c in listed if c["domain"] == f"kumar{index}.example")
     lead = await leads_repo.create_from_company(company)
-    return company, lead
+
+    # Stamp it as already researched, which is what a lead in a campaign
+    # always is in production - launch only offers qualified leads, and
+    # qualification writes score_version. Without this the tick's research
+    # sweep correctly picks these up as unscored and queues chain jobs the
+    # outreach tests are not about.
+    from bson import ObjectId
+    import database as database_module
+    await database_module.db.leads.update_one(
+        {"_id": ObjectId(lead["id"])},
+        {"$set": {"score_version": "test", "qualification_status": "qualified"}},
+    )
+    return company, {**lead, "score_version": "test"}
 
 
 async def _make_running_campaign(lead_ids, approval_mode="manual"):
@@ -712,3 +724,59 @@ async def test_an_unconfigured_webhook_secret_fails_closed(db, monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await resend_webhook(_FakeRequest(b"{}", {}))
     assert exc.value.status_code == 503
+
+
+# --- Autonomy -----------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_the_tick_researches_leads_nobody_has_processed(db, ready, stub_llm):
+    """The gap that made this un-autonomous.
+
+    Discovery creates leads; nothing scored them. An operator had to open each
+    one and press "Enrich, audit & score", and a campaign launched against
+    fresh leads found nothing qualified to enrol - which reads as the system
+    rejecting every lead rather than never having looked at one.
+    """
+    from sdr.collections import JOBS
+    from sdr.repositories import companies as companies_repo
+    from sdr.repositories import leads as leads_repo
+    from sdr.repositories import settings as settings_repo
+    from sdr.services import campaigns as campaigns_service
+
+    await settings_repo.update_settings({"module_enabled": True})
+
+    await companies_repo.upsert_many([{
+        "name": "Fresh Clinic", "domain": "freshclinic.example",
+        "city": "Pune", "country_code": "IN", "industry": "dental",
+        "primary_email": "owner@freshclinic.example", "discovery_source": "osm_overpass",
+    }])
+    company = next(c for c in (await companies_repo.list_companies(limit=50))["items"]
+                   if c["domain"] == "freshclinic.example")
+    lead = await leads_repo.create_from_company(company)
+    assert not lead.get("score_version"), "a freshly discovered lead is unscored"
+
+    report = await campaigns_service.tick()
+
+    assert report["research_leads"] == 1
+    assert report["research_queued"] > 0
+
+    queued = await db[JOBS].find({"status": "queued"}).to_list(50)
+    agent_keys = {j["agent_key"] for j in queued}
+    # The whole chain, not just one step.
+    assert "lead_scoring" in agent_keys
+    assert "lead_qualification" in agent_keys
+
+
+@pytest.mark.asyncio
+async def test_a_lead_already_researched_is_not_queued_again(db, ready, stub_llm):
+    """Re-queueing every scored lead on every tick would burn the LLM budget
+    in a morning."""
+    from sdr.repositories import settings as settings_repo
+    from sdr.services import campaigns as campaigns_service
+
+    await settings_repo.update_settings({"module_enabled": True})
+    await _seed_lead()   # stamped score_version by the helper
+
+    report = await campaigns_service.tick()
+    assert report["research_leads"] == 0
+    assert report["research_queued"] == 0

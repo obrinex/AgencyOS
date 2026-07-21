@@ -82,6 +82,7 @@ async def tick() -> dict:
         "new_lead_slots_exhausted": False, "sends_queued": 0,
         "send_sweep_skipped": None, "completed_campaigns": 0,
         "no_shows_marked": 0, "leads_reverted": 0, "replies_ingested": 0,
+        "research_queued": 0, "research_leads": 0,
     }
     # Listening is not acting. Replies are ingested before the module gate,
     # because mail already sent keeps earning answers after outbound stops -
@@ -94,6 +95,12 @@ async def tick() -> dict:
     if not settings.get("module_enabled") or settings.get("kill_switch"):
         report["send_sweep_skipped"] = "module disabled or kill switch on"
         return report
+
+    # Research sweep. Discovery creates leads; without this nothing ever
+    # scores them, so an operator had to open each one and press a button -
+    # which is the opposite of autonomous, and the reason a campaign launched
+    # against fresh leads found nothing qualified to enrol.
+    report.update(await _research_new_leads())
 
     running = await db[campaigns_repo.CAMPAIGNS].find(
         {"status": "running", "deleted_at": None}
@@ -197,6 +204,50 @@ async def tick() -> dict:
             report["sends_queued"] += 1
 
     return report
+
+
+#: Leads sent through the research chain per tick. The chain is several jobs
+#: per lead and the drain shares a 60-second ceiling with everything else, so
+#: this stays small - a backlog clears over consecutive ticks rather than
+#: timing one out.
+RESEARCH_BATCH = 10
+
+
+async def _research_new_leads() -> dict:
+    """Enrich, audit, research, score and qualify leads nobody has processed.
+
+    A lead is "new" here when it has never been scored - `score_version` is
+    the marker, written by the scoring agent, so a lead that has been through
+    the chain is never queued twice however it was created.
+
+    Idempotency is the chain's own: the batch key is derived from the lead, so
+    re-queueing a lead already in flight creates nothing.
+    """
+    try:
+        cursor = db.leads.find(
+            {
+                "sdr_managed": True,
+                "score_version": None,
+                "deleted_at": None,
+            },
+            {"_id": 1},
+        ).limit(RESEARCH_BATCH)
+        lead_ids = [str(doc["_id"]) async for doc in cursor]
+
+        if not lead_ids:
+            return {"research_queued": 0}
+
+        from sdr.services import enrich_chain
+        result = await enrich_chain.enqueue_chain(lead_ids, batch_key="auto")
+        if len(lead_ids) == RESEARCH_BATCH:
+            logger.info("Research backlog: more unscored leads remain after this batch")
+        return {"research_queued": result["jobs_queued"],
+                "research_leads": len(lead_ids)}
+    except Exception:
+        # Research is the front of the pipeline; a failure here must not stop
+        # the sends and replies behind it.
+        logger.exception("Research sweep failed")
+        return {"research_queued": None}
 
 
 async def _ingest_replies() -> dict:

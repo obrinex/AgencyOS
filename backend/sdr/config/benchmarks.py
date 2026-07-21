@@ -100,7 +100,30 @@ DEFAULT_INDUSTRY = {
 
 #: Purchasing-power adjustment applied to `avg_deal_value`, keyed by country.
 #: Rough and openly so - it is surfaced in the assumptions.
+#:
+#: This is NOT a currency conversion. It answers "what does this cost locally
+#: relative to the US", still denominated in USD.
 REGION_MULTIPLIER = {"IN": 0.35, "US": 1.0, "GB": 0.95, "AE": 0.85, "DEFAULT": 0.7}
+
+#: USD -> local currency, applied after the purchasing-power adjustment.
+#:
+#: Without this the figures were relabelled as the local currency but never
+#: converted, so an Indian cafe showed an average deal of "INR 6.3" - the USD
+#: figure with a rupee sign on it. Every ROI estimate for a non-USD country
+#: was out by the exchange rate.
+#:
+#: Deliberately static: `benchmarks.resolve` is a pure function called from
+#: scoring and outreach, and making it async to fetch a live rate would push
+#: I/O into the domain layer for a number that only needs to be roughly right.
+#: The USD->INR figure matches `fx.FALLBACK_USD_INR` so the two cannot drift.
+#: These are estimates - review them alongside BENCHMARK_VERSION.
+CURRENCY_RATE = {
+    "USD": 1.0,
+    "INR": 88.0,
+    "GBP": 0.79,
+    "AED": 3.67,   # pegged
+    "EUR": 0.92,
+}
 
 
 def resolve(industry: str | None, country_code: str | None) -> dict:
@@ -119,16 +142,24 @@ def resolve(industry: str | None, country_code: str | None) -> dict:
         country["code"], REGION_MULTIPLIER["DEFAULT"]
     )
 
+    currency = country["currency"]
+    fx = CURRENCY_RATE.get(currency, 1.0)
+
     resolved = dict(_GLOBAL)
     resolved.update(industry_row)
     resolved.update({
         # Deal values are quoted in the prospect's own currency so a proposal
-        # never shows a figure the reader has to convert in their head.
-        "currency": country["currency"],
-        "avg_deal_value": round(industry_row["avg_deal_value"] * multiplier, 2),
+        # never shows a figure the reader has to convert in their head. Two
+        # steps, and both are needed: adjust for local purchasing power, then
+        # actually convert into that currency.
+        "currency": currency,
+        "avg_deal_value": round(
+            industry_row["avg_deal_value"] * multiplier * fx, 2
+        ),
         "version": BENCHMARK_VERSION,
         "source": BENCHMARK_SOURCE,
         "industry_matched": industry_key if industry_key in INDUSTRIES else None,
         "region_multiplier": multiplier,
+        "currency_rate": fx,
     })
     return resolved
