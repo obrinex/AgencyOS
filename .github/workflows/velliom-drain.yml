@@ -1,0 +1,78 @@
+# The external pinger for Velliom, the AI co-founder.
+#
+# Vercel has no long-running process, so nothing in Velliom happens between web
+# requests unless something calls its drain endpoint: no support tickets are
+# answered or escalated, no deliverable health probes run, no morning/evening
+# briefs, no queued Telegram turns are finished. This is that something.
+#
+# It mirrors sdr-drain.yml exactly — same schedule, same CRON_SECRET — because
+# `/api/velliom/drain` deliberately shares the SDR drain's authentication (one
+# secret, not two). The SDR workflow pings the SDR endpoint; this one pings
+# Velliom's. Both are needed; neither covers the other.
+#
+# SETUP (one step, shared with SDR): a repository secret named CRON_SECRET whose
+# value matches the CRON_SECRET set in Vercel (backend project).
+#   Settings -> Secrets and variables -> Actions -> New repository secret
+# If SDR's drain already runs, this secret is already set and this workflow works
+# the moment it lands on the default branch.
+#
+# GitHub's scheduler is best-effort and can run late under load; that is fine
+# here — every handler is idempotent and time-boxed, so a late tick picks up
+# whatever the last one missed.
+
+name: Velliom drain
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub's minimum). Idle ticks are near-free: with no
+    # ticket needing attention the support sweep returns immediately, and the
+    # daily cost cap halts spend if anything ever runs away.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+# A slow run must never overlap the next tick.
+concurrency:
+  group: velliom-drain
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the Velliom drain endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          # Change this if the backend deployment URL ever changes.
+          BACKEND_URL: https://backend-five-hazel-13.vercel.app
+        run: |
+          set -uo pipefail
+
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET repository secret is not set. Every drain will 401."
+            exit 1
+          fi
+
+          response=$(curl -sS -m 60 -w "\n%{http_code}" -X POST \
+            "${BACKEND_URL}/api/velliom/drain" \
+            -H "x-cron-secret: ${CRON_SECRET}")
+
+          status=$(printf '%s' "${response}" | tail -n1)
+          body=$(printf '%s' "${response}" | sed '$d')
+
+          echo "HTTP ${status}"
+          echo "${body}"
+
+          case "${status}" in
+            200)
+              echo "::notice::Velliom drain completed."
+              ;;
+            401)
+              echo "::error::Rejected. The CRON_SECRET here does not match Vercel's."
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected status ${status} from the Velliom drain endpoint."
+              exit 1
+              ;;
+          esac
