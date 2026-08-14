@@ -1,3 +1,17 @@
+> # ⛔ SUPERSEDED — NEVER IMPLEMENTED. DO NOT USE AS A SOURCE OF TRUTH.
+>
+> This document describes a planned migration to **Hostinger managed Node.js +
+> Supabase PostgreSQL/Auth** that **was never carried out**. No part of it
+> shipped. Nothing in it describes the running system.
+>
+> **AgencyOS actually runs on:** FastAPI + MongoDB Atlas (Motor) + React 19 on
+> CRA/CRACO, deployed to **Vercel**, with custom JWT/bcrypt/TOTP auth,
+> three roles (`admin`/`team_member`/`client`), and **Cashfree** payments.
+>
+> Archived 2026-07-22: these files were mistaken for current state and produced
+> a module specification written against a stack that does not exist.
+> For the verified live architecture see `docs/agent-module/00-forensics.md` §0.
+
 # Supabase Schema Plan
 
 Do not create every possible table blindly. Start with tables matching currently implemented production features.

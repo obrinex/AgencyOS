@@ -34,22 +34,16 @@ import Notes from "@/pages/Notes";
 import Help from "@/pages/Help";
 import Calendar from "@/pages/Calendar";
 import BookMeeting from "@/pages/BookMeeting";
+import ManageMeeting from "@/pages/ManageMeeting";
 import PublicAgreement from "@/pages/PublicAgreement";
 import LeadCapture from "@/pages/LeadCapture";
 import PublicProject from "@/pages/PublicProject";
 import LeadFinder from "@/pages/LeadFinder";
 import PayInvoice from "@/pages/PayInvoice";
 import Emails from "@/pages/Emails";
+import Chat from "@/pages/Chat";
+import Policies from "@/pages/Policies";
 import PaymentLinks from "@/pages/PaymentLinks";
-import SDROverview from "@/pages/sdr/SDROverview";
-import SDRLeads from "@/pages/sdr/SDRLeads";
-import SDRAgents from "@/pages/sdr/SDRAgents";
-import SDRAudits from "@/pages/sdr/SDRAudits";
-import SDRDeliverability from "@/pages/sdr/SDRDeliverability";
-import AIAgentsMonitor from "@/pages/agents/AIAgentsMonitor";
-import SDRCampaigns from "@/pages/sdr/SDRCampaigns";
-import SDROutreach from "@/pages/sdr/SDROutreach";
-import SDRInbox from "@/pages/sdr/SDRInbox";
 
 import PortalDashboard from "@/pages/portal/PortalDashboard";
 import PortalProjects from "@/pages/portal/PortalProjects";
@@ -58,6 +52,8 @@ import PortalInvoices from "@/pages/portal/PortalInvoices";
 import PortalContracts from "@/pages/portal/PortalContracts";
 import PortalFiles from "@/pages/portal/PortalFiles";
 import PortalSupport from "@/pages/portal/PortalSupport";
+import PortalChat from "@/pages/portal/PortalChat";
+import PortalPolicies from "@/pages/portal/PortalPolicies";
 import PortalTicketDetail from "@/pages/portal/PortalTicketDetail";
 import PublicProposal from "@/pages/PublicProposal";
 
@@ -71,6 +67,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/proposal/:token" element={<PublicProposal />} />
             <Route path="/book/:slug" element={<BookMeeting />} />
+            <Route path="/meeting/:token" element={<ManageMeeting />} />
             <Route path="/agreement/:token" element={<PublicAgreement />} />
             <Route path="/start/:slug" element={<LeadCapture />} />
             <Route path="/status/:token" element={<PublicProject />} />
@@ -86,17 +83,6 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/crm" element={<CRMPipeline />} />
               <Route path="/lead-finder" element={<LeadFinder />} />
-              <Route path="/ai-sdr" element={<SDROverview />} />
-              <Route path="/ai-sdr/leads" element={<SDRLeads />} />
-              {/* Platform-wide AI monitor: every capability, not just SDR. */}
-              <Route path="/ai-agents" element={<AIAgentsMonitor />} />
-              {/* SDR's own queue/dead-letter view stays where it was. */}
-              <Route path="/ai-sdr/agents" element={<SDRAgents />} />
-              <Route path="/ai-sdr/audits" element={<SDRAudits />} />
-              <Route path="/ai-sdr/deliverability" element={<SDRDeliverability />} />
-              <Route path="/ai-sdr/campaigns" element={<SDRCampaigns />} />
-              <Route path="/ai-sdr/outreach" element={<SDROutreach />} />
-              <Route path="/ai-sdr/inbox" element={<SDRInbox />} />
               <Route path="/crm/:id" element={<LeadDetail />} />
               <Route path="/contacts" element={<Contacts />} />
               <Route path="/clients" element={<Clients />} />
@@ -112,6 +98,7 @@ function App() {
               <Route path="/proposals" element={<Proposals />} />
               <Route path="/proposals/:id" element={<ProposalDetail />} />
               <Route path="/contracts" element={<Contracts />} />
+              <Route path="/chat" element={<Chat />} />
               <Route path="/support" element={<Support />} />
               <Route path="/support/:id" element={<TicketDetail />} />
               <Route path="/knowledge-base" element={<KnowledgeBase />} />
@@ -120,6 +107,7 @@ function App() {
               <Route path="/automations" element={<Automations />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/policies" element={<Policies />} />
               <Route path="/notes" element={<Notes />} />
               <Route path="/help" element={<Help />} />
               <Route path="/calendar" element={<Calendar />} />
@@ -141,6 +129,8 @@ function App() {
               <Route path="invoices/:id" element={<InvoiceDetail />} />
               <Route path="contracts" element={<PortalContracts />} />
               <Route path="files" element={<PortalFiles />} />
+              <Route path="chat" element={<PortalChat />} />
+              <Route path="policies" element={<PortalPolicies />} />
               <Route path="support" element={<PortalSupport />} />
               <Route path="support/:id" element={<PortalTicketDetail />} />
             </Route>

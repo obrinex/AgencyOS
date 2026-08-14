@@ -332,10 +332,10 @@ export default function Settings() {
               className="bg-surface-1 border-white/10 text-sm"
             />
             <p className="text-xs text-graphite mt-1">
-              Appears in the footer of every outreach email. Commercial email law in
-              most countries requires a real physical address, so the AI SDR
-              <span className="text-warning"> will refuse to send without one</span> and
-              park the message for review instead.
+              Appears in the footer of outbound email. Commercial email law in most
+              countries requires a real physical address, so
+              <span className="text-warning"> fill this in before sending anything</span> to
+              people who did not ask to hear from you.
             </p>
           </div>
           <div className="space-y-1"><Label>Custom Domain</Label><Input data-testid="settings-custom-domain" value={company.custom_domain || ""} onChange={(e) => setCompany({ ...company, custom_domain: e.target.value })} placeholder="app.youragency.com" className="bg-surface-1 border-white/10" /></div>

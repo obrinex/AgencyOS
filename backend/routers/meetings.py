@@ -7,11 +7,52 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from database import db, serialize_doc, serialize_list, to_object_id
-from auth_utils import require_staff
+from auth_utils import require_staff, log_audit
 from automation_engine import run_meeting_automation
+from email_service import send_meeting_cancelled_email, send_meeting_rescheduled_email
 import google_calendar_utils as gcal
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
+
+
+class CancelPayload(BaseModel):
+    reason: Optional[str] = None
+    notify: bool = True
+
+
+class ReschedulePayload(BaseModel):
+    start_time: str
+    end_time: Optional[str] = None
+    notify: bool = True
+
+
+async def _meeting_recipients(meeting: dict) -> list:
+    """Everyone who should be told about a change: attendees, then the client's
+    primary contact as a fallback.
+
+    Attendees are `{name, email}` objects. A meeting with none falls back to the
+    client's contact so a client meeting booked without explicit attendees still
+    notifies the right person. De-duplicated by email.
+    """
+    seen, out = set(), []
+    for a in (meeting.get("attendees") or []):
+        email = (a or {}).get("email")
+        if email and email.lower() not in seen:
+            seen.add(email.lower())
+            out.append({"name": a.get("name") or "there", "email": email})
+
+    if not out and meeting.get("client_id"):
+        try:
+            contact = await db.contacts.find_one(
+                {"client_id": meeting["client_id"], "email": {"$ne": None}})
+            if contact and contact.get("email"):
+                out.append({"name": contact.get("name") or "there",
+                            "email": contact["email"]})
+        except Exception:
+            pass
+    return out
 
 
 class MeetingCreate(BaseModel):
@@ -99,6 +140,146 @@ async def delete_meeting(meeting_id: str, user: dict = Depends(require_staff)):
                 pass
     await db.meetings.delete_one({"_id": to_object_id(meeting_id)})
     return {"message": "Meeting deleted"}
+
+
+# -- shared cancel / reschedule core -------------------------------------------
+#
+# The logic is identical whether a staff member triggers it from the calendar or
+# an attendee taps a link in their confirmation email. The only difference is who
+# the actor is (a user id, or None for a public/self-service action), so it is
+# parameterised on that rather than duplicated - the public booking endpoints in
+# routers/bookings.py call these too.
+
+
+async def _maybe_sync_gcal_delete(meeting: dict, actor_id: Optional[str]) -> None:
+    """Best-effort removal from Google Calendar. A calendar hiccup must never
+    stop the cancellation being recorded and the attendee told."""
+    owner = meeting.get("created_by") or actor_id
+    if not (meeting.get("google_event_id") and owner):
+        return
+    tokens = await _get_google_tokens(owner)
+    if not tokens:
+        return
+    try:
+        service = await gcal.get_calendar_service(tokens)
+        service.events().delete(
+            calendarId="primary", eventId=meeting["google_event_id"]).execute()
+    except Exception:
+        logger.warning("Google Calendar delete failed on cancel of %s", meeting.get("_id"))
+
+
+async def apply_cancellation(meeting: dict, *, reason: Optional[str], notify: bool,
+                             actor_id: Optional[str]) -> dict:
+    """Mark a meeting cancelled, drop it from Google Calendar, notify attendees.
+
+    Idempotent: cancelling an already-cancelled meeting is a no-op that returns
+    the meeting, so a double-tapped email link does not error or re-email.
+    """
+    if meeting.get("status") == "cancelled":
+        return serialize_doc(meeting)
+
+    await _maybe_sync_gcal_delete(meeting, actor_id)
+
+    await db.meetings.update_one(
+        {"_id": meeting["_id"]},
+        {"$set": {"status": "cancelled",
+                  "cancel_reason": reason,
+                  "cancelled_at": datetime.now(timezone.utc).isoformat(),
+                  "cancelled_by": actor_id}})
+
+    notified = []
+    if notify:
+        for r in await _meeting_recipients(meeting):
+            try:
+                await send_meeting_cancelled_email(
+                    r["email"], r["name"], meeting.get("title", "your meeting"),
+                    meeting.get("start_time"), reason)
+                notified.append(r["email"])
+            except Exception as exc:
+                logger.error("Cancellation email to %s failed: %s", r["email"], exc)
+
+    await log_audit(actor_id, "cancel_meeting", "meeting", str(meeting["_id"]))
+    updated = await db.meetings.find_one({"_id": meeting["_id"]})
+    result = serialize_doc(updated)
+    result["notified"] = notified
+    return result
+
+
+async def apply_reschedule(meeting: dict, *, start_time: str,
+                           end_time: Optional[str], notify: bool,
+                           actor_id: Optional[str]) -> dict:
+    """Move a meeting to a new time, update Google Calendar, notify attendees
+    with the old-and-new time. Rescheduling revives a cancelled meeting."""
+    old_start = meeting.get("start_time")
+    updates = {"start_time": start_time,
+               "status": "scheduled",
+               "rescheduled_at": datetime.now(timezone.utc).isoformat(),
+               "rescheduled_by": actor_id}
+    if end_time is not None:
+        updates["end_time"] = end_time
+
+    await db.meetings.update_one({"_id": meeting["_id"]}, {"$set": updates})
+
+    owner = meeting.get("created_by") or actor_id
+    if meeting.get("google_event_id") and owner:
+        tokens = await _get_google_tokens(owner)
+        if tokens:
+            try:
+                merged = {**meeting, **updates}
+                service = await gcal.get_calendar_service(tokens)
+                service.events().update(
+                    calendarId="primary", eventId=meeting["google_event_id"],
+                    body=gcal.event_body(merged)).execute()
+            except Exception:
+                logger.warning("Google Calendar update failed on reschedule of %s",
+                               meeting.get("_id"))
+
+    notified = []
+    if notify:
+        for r in await _meeting_recipients(meeting):
+            try:
+                await send_meeting_rescheduled_email(
+                    r["email"], r["name"], meeting.get("title", "your meeting"),
+                    old_start, start_time)
+                notified.append(r["email"])
+            except Exception as exc:
+                logger.error("Reschedule email to %s failed: %s", r["email"], exc)
+
+    await log_audit(actor_id, "reschedule_meeting", "meeting", str(meeting["_id"]))
+    updated = await db.meetings.find_one({"_id": meeting["_id"]})
+    result = serialize_doc(updated)
+    result["notified"] = notified
+    return result
+
+
+@router.post("/{meeting_id}/cancel")
+async def cancel_meeting(meeting_id: str, payload: CancelPayload,
+                         user: dict = Depends(require_staff)):
+    """Cancel a meeting: mark it cancelled, drop it from Google Calendar, and
+    email the attendee(s).
+
+    Distinct from delete - a cancelled meeting stays on the record (so the
+    calendar shows what was called off and when), whereas delete removes it
+    entirely. Cancelling is the client-facing action; deleting is housekeeping.
+    """
+    meeting = await db.meetings.find_one({"_id": to_object_id(meeting_id)})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return await apply_cancellation(meeting, reason=payload.reason,
+                                    notify=payload.notify, actor_id=user["id"])
+
+
+@router.post("/{meeting_id}/reschedule")
+async def reschedule_meeting(meeting_id: str, payload: ReschedulePayload,
+                             user: dict = Depends(require_staff)):
+    """Move a meeting to a new time, update Google Calendar, and email the
+    attendee(s) the old-and-new time."""
+    meeting = await db.meetings.find_one({"_id": to_object_id(meeting_id)})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return await apply_reschedule(meeting, start_time=payload.start_time,
+                                  end_time=payload.end_time,
+                                  notify=payload.notify, actor_id=user["id"])
 
 
 # ---------------- Google Calendar sync ----------------

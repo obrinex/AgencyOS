@@ -105,10 +105,15 @@ require_client = require_roles("client")
 
 # Modules a team member's access can be limited to. An empty/missing permissions
 # list on a team_member means full access (backward compatible). Admins always pass.
+#
+# The `ai_sdr` and `agents` keys were removed along with the modules they
+# gated. Existing team members may still carry them in their stored
+# permissions list; an unrecognised entry is simply never matched, so those
+# rows need no migration. A new agent system should add its own key here
+# rather than reviving either name.
 PERMISSION_MODULES = [
     "crm", "emails", "documents", "clients", "projects", "support",
     "calendar", "finance", "knowledge", "vault", "files", "notes", "analytics",
-    "ai_sdr",
 ]
 
 
@@ -127,15 +132,43 @@ def require_module(module: str):
     return checker
 
 
-async def log_audit(user_id: str, action: str, entity_type: str = None, entity_id: str = None, request: Request = None):
-    await db.audit_logs.insert_one({
+async def log_audit(user_id: str, action: str, entity_type: str = None, entity_id: str = None,
+                    request: Request = None, *,
+                    actor_id: str = None, via_run_id: str = None,
+                    before: dict = None, after: dict = None):
+    """Write an audit row.
+
+    The first five parameters are unchanged and every existing caller keeps
+    working. The four additions are keyword-only, so they can never be filled
+    by accident from a positional call.
+
+    `via_run_id` is the important one: its presence is what distinguishes an
+    agent-caused write from a human one. Every agent-originated write to any
+    collection in this application must set it (Velliom spec §3.3). It is
+    never set speculatively - a row without it was written by a person.
+
+    Fields are omitted rather than written as null when unset. The indexes on
+    `actor_id` and `via_run_id` are sparse, and MongoDB's sparse indexes skip
+    only *missing* fields, not null ones - writing nulls would put every
+    historical human action into an index meant to hold agent actions.
+    """
+    doc = {
         "user_id": user_id,
         "action": action,
         "entity_type": entity_type,
         "entity_id": entity_id,
         "ip_address": request.client.host if request else None,
         "created_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }
+    if actor_id is not None:
+        doc["actor_id"] = actor_id
+    if via_run_id is not None:
+        doc["via_run_id"] = via_run_id
+    if before is not None:
+        doc["before"] = before
+    if after is not None:
+        doc["after"] = after
+    await db.audit_logs.insert_one(doc)
 
 
 async def check_brute_force(identifier: str):

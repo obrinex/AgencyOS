@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, FolderKanban, Receipt, FolderOpen, LifeBuoy, FileSignature, LogOut, Menu, X } from "lucide-react";
+import { LayoutDashboard, FolderKanban, Receipt, FolderOpen, LifeBuoy, FileSignature, LogOut, Menu, X, MessageSquare, FileText } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import ClientTwoFAPrompt from "@/components/ClientTwoFAPrompt";
 
 const NAV = [
   { to: "/portal", label: "Overview", icon: LayoutDashboard, testId: "portal-nav-overview" },
@@ -11,7 +12,9 @@ const NAV = [
   { to: "/portal/invoices", label: "Invoices", icon: Receipt, testId: "portal-nav-invoices" },
   { to: "/portal/contracts", label: "Contracts", icon: FileSignature, testId: "portal-nav-contracts" },
   { to: "/portal/files", label: "Files", icon: FolderOpen, testId: "portal-nav-files" },
+  { to: "/portal/chat", label: "Messages", icon: MessageSquare, testId: "portal-nav-chat" },
   { to: "/portal/support", label: "Support", icon: LifeBuoy, testId: "portal-nav-support" },
+  { to: "/portal/policies", label: "Policies", icon: FileText, testId: "portal-nav-policies" },
 ];
 
 const linkClass = ({ isActive }) =>
@@ -181,6 +184,8 @@ export default function PortalLayout() {
           <Outlet />
         </main>
       </div>
+
+      <ClientTwoFAPrompt />
     </div>
   );
 }

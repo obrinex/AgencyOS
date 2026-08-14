@@ -8,12 +8,13 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { formatMoney } from "@/lib/currency";
 import { toast } from "sonner";
 
-const emptyForm = { company_name: "", website: "", industry: "", location: "" };
+const emptyForm = { company_name: "", website: "", industry: "", location: "", notes: "" };
 
 export default function Clients() {
   const [clients, setClients] = useState(null);
@@ -118,6 +119,16 @@ export default function Clients() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label>Industry</Label><Input data-testid="client-form-industry" value={form.industry} onChange={(e) => setForm({ ...form, industry: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <div className="space-y-1"><Label>Location</Label><Input data-testid="client-form-location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+            </div>
+            <div className="space-y-1">
+              <Label>About the client / founder <span className="text-graphite font-normal">(optional)</span></Label>
+              <Textarea
+                data-testid="client-form-notes"
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="Who they are, their founder, what they care about, how they like to be spoken to, history, quirks. Your AI account manager and support agent use this to personalise replies."
+                className="bg-surface-2 border-white/10 min-h-[96px]"
+              />
             </div>
             <DialogFooter><Button type="submit" data-testid="client-form-submit">Add Client</Button></DialogFooter>
           </form>

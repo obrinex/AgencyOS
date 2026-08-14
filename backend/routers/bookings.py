@@ -210,6 +210,11 @@ async def public_book(slug: str, payload: BookRequest):
 
     slot_min = int(settings.get("slot_minutes") or 30)
     now = datetime.now(dt_timezone.utc).isoformat()
+    # Secret, unguessable handle for the self-service manage page linked from the
+    # confirmation email. Same model as share_token / payment_token elsewhere:
+    # the token IS the authorisation, so no login is needed to cancel or move
+    # one's own booking, and no one can touch a booking whose token they lack.
+    manage_token = secrets.token_urlsafe(24)
     doc = {
         "title": f"{settings.get('title', 'Meeting')} — {payload.name}",
         "lead_id": None,
@@ -226,21 +231,18 @@ async def public_book(slug: str, payload: BookRequest):
         "source": "booking",
         "google_event_id": None,
         "booked_by": {"name": payload.name, "email": payload.email},
+        "manage_token": manage_token,
+        # Which booking calendar this came from, so the reschedule page can fetch
+        # that calendar's available slots.
+        "booking_slug": slug,
     }
     res = await db.meetings.insert_one(doc)
 
-    # An SDR-originated booking attaches to its lead: stage moves, sequence
-    # stops. Wrapped because a booking is a real commitment in the calendar —
-    # failing to attribute it must never lose it.
+    # An outreach-originated booking used to attach itself to its lead here,
+    # moving the stage and stopping the sequence. That lived in the agent layer.
+    # `ref` is still accepted and stored on the meeting, so a link in an email
+    # already sent does not 422 - it just no longer attributes automatically.
     attached = None
-    if payload.ref:
-        try:
-            from sdr.services import meetings as sdr_meetings
-            attached = await sdr_meetings.attach_booking(str(res.inserted_id), payload.ref)
-        except Exception:
-            logging.getLogger(__name__).exception(
-                "Could not attach booking %s to a lead", res.inserted_id
-            )
 
     admins = await db.users.find({"role": "admin"}).to_list(20)
     local_label = local_start.strftime("%b %d, %Y at %I:%M %p")
@@ -250,6 +252,7 @@ async def public_book(slug: str, payload: BookRequest):
         f"{local_label} ({settings.get('timezone', '')})",
         settings.get("location") or "To be confirmed",
         (await db.company_settings.find_one({"key": "main"}) or {}).get("company_name") or "Obrinex",
+        manage_token=manage_token,
     )
     await whatsapp_notify_admin(
         f"📅 New booking!\n{payload.name} ({payload.email}) booked \"{settings.get('title', 'a meeting')}\"\n🕐 {local_label} ({settings.get('timezone', '')})"
@@ -274,3 +277,92 @@ async def public_book(slug: str, payload: BookRequest):
         "timezone": settings.get("timezone"),
         "attached_to_lead": bool((attached or {}).get("attached")),
     }
+
+
+# ---------------- Self-service manage (from the confirmation email) ----------
+#
+# The manage token in the confirmation email authorises exactly one meeting:
+# viewing it, moving it, or cancelling it, with no login. Same trust model as the
+# share/payment tokens in the public router - the token IS the authorisation, and
+# it scopes to one meeting, so a leaked or guessed token can touch nothing else.
+
+
+class PublicRescheduleRequest(BaseModel):
+    start_time: str
+
+
+async def _meeting_by_manage_token(token: str) -> dict:
+    meeting = await db.meetings.find_one({"manage_token": token})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="This meeting link is not valid.")
+    return meeting
+
+
+@router.get("/public/booking/manage/{token}")
+async def public_manage_info(token: str):
+    """What the manage page renders. Deliberately narrow - the meeting's own
+    details plus the booking slug (so the page can fetch reschedule slots from
+    the existing public endpoints). No ids, no internal fields."""
+    meeting = await _meeting_by_manage_token(token)
+    company = (await db.company_settings.find_one({"key": "main"})
+               or {}).get("company_name") or "Obrinex"
+    return {
+        "title": meeting.get("title"),
+        "start_time": meeting.get("start_time"),
+        "end_time": meeting.get("end_time"),
+        "location": meeting.get("location"),
+        "status": meeting.get("status"),
+        "attendee_name": (meeting.get("booked_by") or {}).get("name"),
+        "company_name": company,
+        "booking_slug": meeting.get("booking_slug"),
+        "can_reschedule": bool(meeting.get("booking_slug")),
+    }
+
+
+@router.post("/public/booking/manage/{token}/cancel")
+async def public_manage_cancel(token: str):
+    """Attendee cancels their own meeting. Idempotent - a second tap on the
+    email link returns the already-cancelled meeting rather than erroring."""
+    from routers.meetings import apply_cancellation
+    meeting = await _meeting_by_manage_token(token)
+    result = await apply_cancellation(
+        meeting, reason="Cancelled by the attendee", notify=True, actor_id=None)
+    return {"status": "cancelled", "title": meeting.get("title"),
+            "start_time": result.get("start_time")}
+
+
+@router.post("/public/booking/manage/{token}/reschedule")
+async def public_manage_reschedule(token: str, payload: PublicRescheduleRequest):
+    """Attendee moves their own meeting to another available slot on the same
+    booking calendar. The new time is validated against real availability - the
+    token authorises moving the meeting, not booking any arbitrary time."""
+    from routers.meetings import apply_reschedule
+    meeting = await _meeting_by_manage_token(token)
+    slug = meeting.get("booking_slug")
+    if not slug:
+        raise HTTPException(status_code=400,
+                            detail="This meeting can't be rescheduled online. Please reply to your confirmation email.")
+
+    settings = await _public_settings(slug)
+    try:
+        start = datetime.fromisoformat(payload.start_time)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid start time")
+    if start.tzinfo is None:
+        raise HTTPException(status_code=400, detail="Start time must include timezone")
+
+    tz = _tz(settings)
+    local_start = start.astimezone(tz)
+    valid_slots = await _slots_for_date(settings, local_start.strftime("%Y-%m-%d"))
+    if start.isoformat() not in valid_slots and local_start.isoformat() not in valid_slots:
+        raise HTTPException(status_code=409,
+                            detail="That slot is no longer available. Please pick another time.")
+
+    slot_min = int(settings.get("slot_minutes") or 30)
+    start_utc = start.astimezone(dt_timezone.utc)
+    end_utc = (start + timedelta(minutes=slot_min)).astimezone(dt_timezone.utc)
+    result = await apply_reschedule(
+        meeting, start_time=start_utc.isoformat(), end_time=end_utc.isoformat(),
+        notify=True, actor_id=None)
+    return {"status": "rescheduled", "title": meeting.get("title"),
+            "start_time": result.get("start_time"), "end_time": result.get("end_time")}

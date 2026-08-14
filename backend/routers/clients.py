@@ -16,6 +16,10 @@ class ClientCreate(BaseModel):
     website: Optional[str] = None
     industry: Optional[str] = None
     location: Optional[str] = None
+    #: Freeform context about the client and/or their founder - who they are,
+    #: what they care about, how they like to be spoken to, history, quirks.
+    #: The Client Manager and Support agents read this to personalise replies.
+    notes: Optional[str] = None
 
 
 class ClientUpdate(BaseModel):
@@ -23,6 +27,7 @@ class ClientUpdate(BaseModel):
     website: Optional[str] = None
     industry: Optional[str] = None
     location: Optional[str] = None
+    notes: Optional[str] = None
     health_score: Optional[int] = None
     owner_id: Optional[str] = None
 
@@ -30,6 +35,33 @@ class ClientUpdate(BaseModel):
 class PortalUserCreate(BaseModel):
     email: EmailStr
     name: str
+    #: When set, the admin's chosen password is used instead of an auto-generated
+    #: one. Left blank, a random one is generated as before.
+    custom_password: Optional[str] = None
+
+
+class ResetPortalPasswordRequest(BaseModel):
+    #: A custom password the admin wants to set. Omitted (or the whole body
+    #: omitted) keeps the original behaviour: a random temporary password.
+    custom_password: Optional[str] = None
+
+
+def _resolve_portal_password(custom: Optional[str]) -> str:
+    """Either the admin's chosen password (validated) or a fresh random one.
+
+    Kept in one place so create and reset apply the same rule. The minimum is a
+    floor, not a policy - it only rejects the obviously-too-weak; anything the
+    admin deliberately types above it is theirs to choose.
+    """
+    if not custom or not custom.strip():
+        return secrets.token_urlsafe(8)
+    custom = custom.strip()
+    if len(custom) < 8:
+        raise HTTPException(status_code=400,
+                            detail="Custom password must be at least 8 characters.")
+    if len(custom) > 128:
+        raise HTTPException(status_code=400, detail="Custom password is too long.")
+    return custom
 
 
 class ChecklistPatch(BaseModel):
@@ -164,7 +196,7 @@ async def create_portal_user(client_id: str, payload: PortalUserCreate, user: di
     existing = await db.users.find_one({"email": payload.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="A user with this email already exists")
-    temp_password = secrets.token_urlsafe(8)
+    temp_password = _resolve_portal_password(payload.custom_password)
     now = datetime.now(timezone.utc).isoformat()
     doc = {
         "email": payload.email.lower(),
@@ -210,7 +242,9 @@ async def get_portal_user_credentials(client_id: str, user: dict = Depends(requi
 
 
 @router.post("/{client_id}/portal-user/reset-password")
-async def reset_portal_user_password(client_id: str, user: dict = Depends(require_staff)):
+async def reset_portal_user_password(client_id: str,
+                                     payload: Optional[ResetPortalPasswordRequest] = None,
+                                     user: dict = Depends(require_staff)):
     client = await db.clients.find_one({"_id": to_object_id(client_id)})
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -220,7 +254,7 @@ async def reset_portal_user_password(client_id: str, user: dict = Depends(requir
     if not portal_user:
         raise HTTPException(status_code=404, detail="Portal user not found")
 
-    temp_password = secrets.token_urlsafe(8)
+    temp_password = _resolve_portal_password(payload.custom_password if payload else None)
     now = datetime.now(timezone.utc).isoformat()
     await db.users.update_one(
         {"_id": portal_user["_id"]},

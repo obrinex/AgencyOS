@@ -94,7 +94,16 @@ async def _wrapper(inner_html: str) -> str:
 
 
 async def send_email(to_email: str, subject: str, html_content: str, attachments: list = None):
-    """attachments: [{"filename": "x.pdf", "content": <bytes>}]"""
+    """attachments: [{"filename": "x.pdf", "content": <bytes>}]
+
+    Re-asserts the key on every call. `resend.api_key` is a module-level global
+    that the deleted outreach sender also wrote to, from a different Resend
+    account: setting it once at import was safe only while both used the same
+    key, and the moment they differed an invoice went out on the outreach
+    account, where SENDER_EMAIL's domain is not verified. Kept as-is, because
+    any replacement sender will reintroduce exactly that hazard.
+    """
+    resend.api_key = os.environ.get("RESEND_API_KEY")
     if not resend.api_key:
         logger.info(f"[EMAIL MOCKED - no RESEND_API_KEY] To: {to_email} | Subject: {subject}"
                     + (f" | attachments: {[a['filename'] for a in attachments]}" if attachments else ""))
@@ -177,12 +186,57 @@ async def send_invoice_email(to_email: str, invoice_number: str, total: float, d
     return await send_email(to_email, f"Invoice {invoice_number} from Obrinex", html, attachments=attachments)
 
 
-async def send_custom_email(to_email: str, subject: str, body_html: str):
-    """Send a user-approved email drafted in the Emails section. Body is plain text/HTML paragraphs."""
+async def resolve_booking_url(explicit: str = None) -> str | None:
+    """The booking button's target: an explicit URL wins; otherwise the app's
+    own public booking page, if enabled. One resolver for every surface that
+    offers a Book-a-Meeting button (Velliom agent, Emails section, proposals)."""
+    if explicit:
+        return explicit
+    settings = await db.booking_settings.find_one({"key": "main"})
+    slug = (settings or {}).get("slug")
+    if not slug or not (settings or {}).get("enabled"):
+        return None
+    base = FRONTEND_URL.rstrip("/")
+    return f"{base}/book/{slug}" if base else None
+
+
+def _cta_buttons_html(demo_url: str = None, booking_url: str = None) -> str:
+    """The conditional CTA row: each button exists only when its link does."""
+    buttons = ""
+    if demo_url:
+        buttons += (f'<a href="{demo_url}" style="display:inline-block;background:#F4F4F5;'
+                    f'color:#131315;padding:11px 22px;border-radius:8px;text-decoration:none;'
+                    f'font-size:14px;font-weight:600;margin-right:10px;margin-bottom:8px;">'
+                    f'View the Demo</a>')
+    if booking_url:
+        style = ("background:#F4F4F5;color:#131315;" if not demo_url else
+                 "background:#222225;color:#F4F4F5;border:1px solid #3A3A3E;")
+        buttons += (f'<a href="{booking_url}" style="display:inline-block;{style}'
+                    f'padding:11px 22px;border-radius:8px;text-decoration:none;'
+                    f'font-size:14px;font-weight:600;margin-bottom:8px;">'
+                    f'Book a Meeting</a>')
+    return buttons
+
+
+async def send_custom_email(to_email: str, subject: str, body_html: str,
+                            demo_url: str = None, booking_url: str = None):
+    """Send a drafted email (Emails section, or the Velliom agent) in the
+    branded shell. Body is plain text: blank lines separate paragraphs, single
+    newlines become line breaks - so what was written is what renders, instead
+    of HTML collapsing it into one run-on blob.
+
+    `demo_url` / `booking_url` each add a call-to-action button - only when
+    given, so an email without a demo has no dead demo button."""
     paragraphs = "".join(
-        f'<tr><td style="font-size:14px;color:#E4E4E7;line-height:1.7;padding-bottom:12px;">{p.strip()}</td></tr>'
+        f'<tr><td style="font-size:14px;color:#E4E4E7;line-height:1.7;padding-bottom:12px;">'
+        f'{p.strip().replace(chr(10), "<br/>")}</td></tr>'
         for p in body_html.split("\n\n") if p.strip()
     )
+
+    buttons = _cta_buttons_html(demo_url, booking_url)
+    if buttons:
+        paragraphs += f'<tr><td style="padding-top:10px;padding-bottom:4px;">{buttons}</td></tr>'
+
     html = await _wrapper(paragraphs)
     return await send_email(to_email, subject, html)
 
@@ -196,14 +250,27 @@ async def send_password_reset_email(to_email: str, token: str):
     return await send_email(to_email, "Reset your AgencyOS password", html)
 
 
-async def send_booking_confirmation_email(to_email: str, name: str, title: str, when_label: str, location: str, company_name: str):
+async def send_booking_confirmation_email(to_email: str, name: str, title: str, when_label: str, location: str, company_name: str, manage_token: str = None):
+    # Self-service reschedule/cancel links. Only shown when a manage token is
+    # present (bookings made through the public page); without it the email
+    # falls back to the reply-to-us line so older callers still work.
+    if manage_token:
+        manage_url = f"{FRONTEND_URL}/meeting/{manage_token}"
+        actions = f"""
+      <tr><td style="padding-top:20px;">
+        <a href="{manage_url}?action=reschedule" style="background:#F4F4F5;color:#131315;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;display:inline-block;margin-right:8px;">Reschedule</a>
+        <a href="{manage_url}?action=cancel" style="background:#222225;color:#F4F4F5;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;display:inline-block;border:1px solid #3A3A3E;">Cancel</a>
+      </td></tr>
+      <tr><td style="padding-top:12px;font-size:12px;color:#85858C;">Need to change something? Use the buttons above, or just reply to this email.</td></tr>"""
+    else:
+        actions = '<tr><td style="padding-top:20px;font-size:13px;color:#85858C;">Need to reschedule? Just reply to this email.</td></tr>'
     html = await _wrapper(f"""
       <tr><td style="font-size:20px;font-weight:700;padding-bottom:12px;">You're booked, {name}!</td></tr>
       <tr><td style="font-size:14px;color:#B5B5BC;padding-bottom:20px;">Your {title} with {company_name} is confirmed.</td></tr>
       <tr><td style="background:#222225;border-radius:8px;padding:16px;font-size:14px;">
         When: <b>{when_label}</b><br/>Where: {location}
       </td></tr>
-      <tr><td style="padding-top:20px;font-size:13px;color:#85858C;">Need to reschedule? Just reply to this email.</td></tr>
+      {actions}
     """)
     return await send_email(to_email, f"Confirmed: {title} with {company_name} — {when_label}", html)
 
@@ -271,13 +338,62 @@ async def send_daily_digest_email(to_email: str, digest: dict):
     return await send_email(to_email, f"Daily Brief · {digest['date']}", html)
 
 
-async def send_proposal_share_email(to_email: str, title: str, share_token: str, pdf_bytes: bytes = None):
+async def send_proposal_share_email(to_email: str, title: str, share_token: str, pdf_bytes: bytes = None,
+                                    demo_url: str = None, booking_url: str = None):
+    extra = _cta_buttons_html(demo_url, booking_url)
+    extra_row = (f'<tr><td style="padding-top:14px;">{extra}</td></tr>') if extra else ""
     html = await _wrapper(f"""
       <tr><td style="font-size:20px;font-weight:700;padding-bottom:12px;">Proposal: {title}</td></tr>
       <tr><td style="font-size:14px;color:#B5B5BC;padding-bottom:20px;">Please find the full proposal attached as a PDF. When you're ready, open it online to accept or decline.</td></tr>
       <tr><td><a href="{FRONTEND_URL}/proposal/{share_token}" style="background:#F4F4F5;color:#131315;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">Review & Accept / Decline</a></td></tr>
+      {extra_row}
       {'<tr><td style="font-size:12px;color:#85858C;padding-top:14px;">📎 Full proposal attached as PDF.</td></tr>' if pdf_bytes else ''}
     """)
     safe = "".join(ch if ch.isalnum() or ch in "-_ " else "" for ch in title).strip().replace(" ", "_") or "proposal"
     attachments = [{"filename": f"{safe}.pdf", "content": pdf_bytes}] if pdf_bytes else None
     return await send_email(to_email, f"Proposal: {title}", html, attachments=attachments)
+
+
+def _fmt_meeting_time(iso_str: str) -> str:
+    """A human, timezone-honest rendering of a meeting time for an email."""
+    if not iso_str:
+        return "the scheduled time"
+    try:
+        from datetime import datetime
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        return dt.strftime("%A, %d %B %Y at %H:%M UTC")
+    except Exception:
+        return iso_str
+
+
+async def send_meeting_cancelled_email(to_email: str, name: str, title: str,
+                                       when_iso: str, reason: str = None):
+    """Tell an attendee their meeting is cancelled. Warm, brief, no ambiguity."""
+    reason_line = (f'<tr><td style="font-size:14px;color:#B5B5BC;padding-bottom:16px;">'
+                   f'Reason: {reason}</td></tr>') if reason else ""
+    html = await _wrapper(f"""
+      <tr><td style="font-size:20px;font-weight:700;padding-bottom:12px;">Your meeting has been cancelled</td></tr>
+      <tr><td style="font-size:14px;color:#B5B5BC;padding-bottom:16px;">Hi {name or 'there'}, the following meeting has been cancelled:</td></tr>
+      <tr><td style="background:#222225;border-radius:8px;padding:16px;font-size:14px;">
+        <b>{title or 'Meeting'}</b><br/>
+        <span style="color:#85858C;">Was scheduled for {_fmt_meeting_time(when_iso)}</span>
+      </td></tr>
+      {reason_line}
+      <tr><td style="font-size:14px;color:#B5B5BC;padding-top:16px;">If you'd like to find another time, just reply to this email and we'll get it rebooked.</td></tr>
+    """)
+    return await send_email(to_email, f"Cancelled: {title or 'your meeting'}", html)
+
+
+async def send_meeting_rescheduled_email(to_email: str, name: str, title: str,
+                                         old_iso: str, new_iso: str):
+    """Tell an attendee their meeting moved, old time struck through, new time clear."""
+    html = await _wrapper(f"""
+      <tr><td style="font-size:20px;font-weight:700;padding-bottom:12px;">Your meeting has been rescheduled</td></tr>
+      <tr><td style="font-size:14px;color:#B5B5BC;padding-bottom:16px;">Hi {name or 'there'}, the time for <b>{title or 'your meeting'}</b> has changed:</td></tr>
+      <tr><td style="background:#222225;border-radius:8px;padding:16px;font-size:14px;">
+        <span style="color:#85858C;text-decoration:line-through;">{_fmt_meeting_time(old_iso)}</span><br/>
+        <b style="color:#F4F4F5;">New time: {_fmt_meeting_time(new_iso)}</b>
+      </td></tr>
+      <tr><td style="font-size:14px;color:#B5B5BC;padding-top:16px;">The invite has been updated. If the new time doesn't work, reply and we'll sort it out.</td></tr>
+    """)
+    return await send_email(to_email, f"Rescheduled: {title or 'your meeting'}", html)

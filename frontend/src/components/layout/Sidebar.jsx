@@ -1,8 +1,5 @@
-import { NavLink } from "react-router-dom";
 import {
-  LayoutDashboard, KanbanSquare, Users, Building2, FolderKanban, CheckSquare,
-  DollarSign, Receipt, FileText, FileSignature, LifeBuoy, BookOpen, Lock,
-  FolderOpen, Zap, BarChart3, Settings, ChevronsLeft, ChevronsRight, StickyNote, HelpCircle, CalendarDays, Sparkles, Mail, Link2, Bot, Database, Cpu, ScanSearch, Send, Megaphone, Inbox, MailCheck, ChevronDown, Gauge,
+  BarChart3, BookOpen, Building2, CalendarDays, CheckSquare, ChevronsLeft, ChevronsRight, DollarSign, FileSignature, FileText, FolderKanban, FolderOpen, HelpCircle, KanbanSquare, LayoutDashboard, LifeBuoy, Link2, Lock, Mail, MessageSquare, Receipt, Settings, Sparkles, StickyNote, Users, Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -14,43 +11,15 @@ export const NAV_SECTIONS = [
     items: [{ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testId: "nav-dashboard" }],
   },
   {
-    // Everything AI-driven lives together, whatever it is used for.
-    //
-    // One agent's pages are one collapsible group. That is the whole reason
-    // for the nesting: a second and third agent would otherwise turn this
-    // section into thirty flat links where nothing indicates which pages
-    // belong to which agent. Adding an agent means adding a group here, not
-    // rethinking the navigation.
-    label: "AI Agents",
-    items: [
-      // The way in - every capability in the app, not just one agent's.
-      { to: "/ai-agents", label: "All Agents", icon: Cpu, testId: "nav-ai-agents" },
-    ],
-    groups: [
-      {
-        key: "leadgen",
-        label: "Lead Gen Agent",
-        icon: Bot,
-        items: [
-          { to: "/ai-sdr", module: "ai_sdr", label: "Control", icon: Gauge, testId: "nav-ai-sdr" },
-          { to: "/ai-sdr/leads", module: "ai_sdr", label: "Lead Database", icon: Database, testId: "nav-sdr-leads" },
-          { to: "/lead-finder", module: "crm", label: "Manual Finder", icon: Sparkles, testId: "nav-lead-finder" },
-          { to: "/ai-sdr/campaigns", module: "ai_sdr", label: "Campaigns", icon: Megaphone, testId: "nav-sdr-campaigns" },
-          // Outreach is the approval queue (outbound), so the inbox icon
-          // belongs to the actual inbox sitting next to it.
-          { to: "/ai-sdr/outreach", module: "ai_sdr", label: "Outreach", icon: MailCheck, testId: "nav-sdr-outreach" },
-          { to: "/ai-sdr/inbox", module: "ai_sdr", label: "Inbox", icon: Inbox, testId: "nav-sdr-inbox" },
-          { to: "/ai-sdr/audits", module: "ai_sdr", label: "Website Audits", icon: ScanSearch, testId: "nav-sdr-audits" },
-          { to: "/ai-sdr/deliverability", module: "ai_sdr", label: "Deliverability", icon: Send, testId: "nav-sdr-deliverability" },
-        ],
-      },
-    ],
-  },
-  {
     label: "Sales",
     items: [
       { to: "/crm", module: "crm", label: "Pipeline", icon: KanbanSquare, testId: "nav-crm" },
       { to: "/contacts", module: "crm", label: "Contacts", icon: Users, testId: "nav-contacts" },
+      // Moved up from the deleted "AI Agents" section, which is where it
+      // used to be nested. The Lead Finder is not an agent - it is a
+      // one-shot search - and losing the link with the group it happened to
+      // sit in would have hidden a working feature.
+      { to: "/lead-finder", module: "crm", label: "Lead Finder", icon: Sparkles, testId: "nav-lead-finder" },
       { to: "/emails", module: "emails", label: "Emails", icon: Mail, testId: "nav-emails" },
       { to: "/proposals", module: "documents", label: "Proposals", icon: FileText, testId: "nav-proposals" },
     ],
@@ -61,6 +30,7 @@ export const NAV_SECTIONS = [
       { to: "/clients", module: "clients", label: "Clients", icon: Building2, testId: "nav-clients" },
       { to: "/projects", module: "projects", label: "Projects", icon: FolderKanban, testId: "nav-projects" },
       { to: "/tasks", module: "projects", label: "Tasks", icon: CheckSquare, testId: "nav-tasks" },
+      { to: "/chat", module: "clients", label: "Client Chat", icon: MessageSquare, testId: "nav-chat" },
       { to: "/support", module: "support", label: "Support Desk", icon: LifeBuoy, testId: "nav-support" },
       { to: "/calendar", module: "calendar", label: "Calendar", icon: CalendarDays, testId: "nav-calendar" },
     ],
@@ -89,29 +59,27 @@ export const NAV_SECTIONS = [
       { to: "/automations", module: "analytics", label: "Automations", icon: Zap, testId: "nav-automations" },
       { to: "/analytics", module: "analytics", label: "Analytics", icon: BarChart3, testId: "nav-analytics" },
       { to: "/settings", label: "Settings", icon: Settings, testId: "nav-settings" },
+      { to: "/policies", label: "Legal & Policies", icon: FileText, testId: "nav-policies" },
       { to: "/help", label: "Help", icon: HelpCircle, testId: "nav-help" },
     ],
   },
 ];
 
-/** Sections and agent groups the current user may see.
+/** Sections the current user may see.
  *
  *  Shared by the desktop sidebar and the mobile drawer - the filtering was
  *  previously written out twice, which is one edit away from the two menus
  *  disagreeing about what a team member can open.
+ *
+ *  Sections used to be able to carry collapsible sub-groups, one per AI agent.
+ *  With the agents removed nothing declared one, so the grouping went too.
  */
 export function visibleSections(user) {
   const perms = user?.role === "team_member" ? (user?.permissions || []) : [];
   const canSee = (item) => !item.module || perms.length === 0 || perms.includes(item.module);
   return NAV_SECTIONS
-    .map((section) => ({
-      ...section,
-      items: (section.items || []).filter(canSee),
-      groups: (section.groups || [])
-        .map((group) => ({ ...group, items: group.items.filter(canSee) }))
-        .filter((group) => group.items.length > 0),
-    }))
-    .filter((section) => section.items.length > 0 || section.groups.length > 0);
+    .map((section) => ({ ...section, items: (section.items || []).filter(canSee) }))
+    .filter((section) => section.items.length > 0);
 }
 
 /** One nav link. Kept in one place so the active treatment cannot drift
@@ -144,65 +112,6 @@ function NavItem({ item, collapsed = false, indented = false, onNavigate }) {
         </>
       )}
     </NavLink>
-  );
-}
-
-/** One agent's pages, collapsible.
- *
- *  Open by default and remembered per agent, because the common case is
- *  working inside one agent all day; the collapse exists for when there are
- *  several and the list would otherwise be unreadable.
- */
-function AgentGroup({ group, collapsed, onNavigate }) {
-  const storageKey = `nav-group-${group.key}`;
-  const [open, setOpen] = useState(() => {
-    try { return localStorage.getItem(storageKey) !== "0"; } catch { return true; }
-  });
-
-  const toggle = () => {
-    setOpen((next) => {
-      const value = !next;
-      try { localStorage.setItem(storageKey, value ? "1" : "0"); } catch { /* private mode */ }
-      return value;
-    });
-  };
-
-  // Collapsed rail: no room for a group header, so the pages stand alone.
-  if (collapsed) {
-    return (
-      <div className="space-y-0.5">
-        {group.items.map((item) => (
-          <NavItem key={item.to} item={item} collapsed onNavigate={onNavigate} />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={toggle}
-        data-testid={`nav-group-${group.key}`}
-        aria-expanded={open}
-        className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs
-                   text-graphite hover:text-foreground transition-colors duration-150"
-      >
-        <group.icon className="h-3.5 w-3.5 shrink-0" />
-        <span className="flex-1 text-left font-medium tracking-tight">{group.label}</span>
-        <ChevronDown
-          className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200",
-                        open ? "" : "-rotate-90")}
-        />
-      </button>
-      {open && (
-        <div className="mt-0.5 space-y-0.5 border-l border-white/10 ml-3.5 pl-1">
-          {group.items.map((item) => (
-            <NavItem key={item.to} item={item} onNavigate={onNavigate} />
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -240,11 +149,6 @@ export default function Sidebar() {
             <div className="space-y-0.5">
               {section.items.map((item) => (
                 <NavItem key={item.to} item={item} collapsed={collapsed} />
-              ))}
-              {(section.groups || []).map((group) => (
-                <div key={group.key} className={collapsed ? "" : "pt-1.5"}>
-                  <AgentGroup group={group} collapsed={collapsed} />
-                </div>
               ))}
             </div>
           </div>
@@ -309,11 +213,6 @@ export function MobileNav({ open, onOpenChange }) {
               <div className="space-y-0.5">
                 {section.items.map((item) => (
                   <NavItem key={item.to} item={item} onNavigate={close} />
-                ))}
-                {(section.groups || []).map((group) => (
-                  <div key={group.key} className="pt-1.5">
-                    <AgentGroup group={group} collapsed={false} onNavigate={close} />
-                  </div>
                 ))}
               </div>
             </div>

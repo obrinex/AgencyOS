@@ -24,6 +24,11 @@ export default function ProposalDetail() {
   const [scope, setScope] = useState("");
   const [shareEmail, setShareEmail] = useState("");
   const [sharing, setSharing] = useState(false);
+  // Optional CTA buttons in the share email — each renders only when its link
+  // is provided / enabled.
+  const [demoUrl, setDemoUrl] = useState("");
+  const [bookingButton, setBookingButton] = useState(false);
+  const [bookingUrl, setBookingUrl] = useState("");
 
   const load = async () => {
     const { data } = await api.get(`/proposals/${id}`);
@@ -61,9 +66,17 @@ export default function ProposalDetail() {
     if (!shareEmail.trim()) { toast.error("Enter a recipient email"); return; }
     setSharing(true);
     try {
-      await api.post(`/proposals/${id}/share-email`, { email: shareEmail });
+      await api.post(`/proposals/${id}/share-email`, {
+        email: shareEmail,
+        demo_url: demoUrl.trim() || null,
+        include_booking_button: bookingButton,
+        booking_url: bookingUrl.trim() || null,
+      });
       toast.success("Proposal emailed to client");
       setShareEmail("");
+      setDemoUrl("");
+      setBookingButton(false);
+      setBookingUrl("");
       load();
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
@@ -152,6 +165,25 @@ export default function ProposalDetail() {
               <Button onClick={shareViaEmail} disabled={sharing} className="gap-1.5 shrink-0" data-testid="proposal-share-email-btn">
                 {sharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send
               </Button>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2 pt-1">
+              <Input data-testid="proposal-demo-url" type="url" value={demoUrl}
+                onChange={(e) => setDemoUrl(e.target.value)}
+                placeholder="Demo link (adds a View-the-Demo button)"
+                className="bg-surface-2 border-white/10 text-xs" />
+              <div className="space-y-1">
+                <label className="flex items-center gap-2 text-xs text-ash cursor-pointer pt-2">
+                  <input type="checkbox" data-testid="proposal-booking-toggle" checked={bookingButton}
+                    onChange={(e) => setBookingButton(e.target.checked)} />
+                  Add a "Book a Meeting" button
+                </label>
+                {bookingButton && (
+                  <Input data-testid="proposal-booking-url" type="url" value={bookingUrl}
+                    onChange={(e) => setBookingUrl(e.target.value)}
+                    placeholder="custom link (empty = your booking page)"
+                    className="bg-surface-2 border-white/10 text-xs" />
+                )}
+              </div>
             </div>
           </>
         )}

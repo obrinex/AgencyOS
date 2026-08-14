@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 import { Plus, Trash2, Wallet, PiggyBank, FileDown, Target, Pencil } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import api, { formatApiError, downloadFile } from "@/lib/api";
+import api, { formatApiError, formatRequestError, downloadFile } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
+import LoadError from "@/components/LoadError";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DatePicker from "@/components/DatePicker";
 import { formatMoney, EXPENSE_TYPES } from "@/lib/currency";
-import { format } from "date-fns";
+import { safeFormat } from "@/lib/dates";
+// Both were used without ever being imported, so rendering this page threw
+// `useFxRate is not defined` before a single element mounted. With no error
+// boundary the whole app unmounted - which is why Finance read as "blank"
+// rather than "broken". eslint no-undef flagged it as a warning, and warnings
+// don't fail the build (vercel.json builds with CI=false).
+import { useFxRate, describeRate } from "@/hooks/useFxRate";
 import { toast } from "sonner";
 
 const EXPENSE_TYPE_LABELS = Object.fromEntries(EXPENSE_TYPES.map((t) => [t.value, t.label]));
@@ -27,6 +34,7 @@ const emptyForm = {
 
 export default function Finance() {
   const [summary, setSummary] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -34,11 +42,21 @@ export default function Finance() {
   const [goalEdit, setGoalEdit] = useState(false);
   const [goalInput, setGoalInput] = useState("");
 
+  // Promise.all rejects on the first failure, so one bad endpoint blanked the
+  // whole page - and with no catch, `summary` stayed null and the skeleton
+  // below rendered forever. Whichever of the three fails, say which.
   const load = async () => {
-    const [s, e, g] = await Promise.all([api.get("/finance/summary"), api.get("/expenses"), api.get("/finance/goal")]);
-    setSummary(s.data);
-    setExpenses(e.data);
-    setGoal(g.data);
+    setLoadError(null);
+    try {
+      const [s, e, g] = await Promise.all([
+        api.get("/finance/summary"), api.get("/expenses"), api.get("/finance/goal"),
+      ]);
+      setSummary(s.data);
+      setExpenses(e.data);
+      setGoal(g.data);
+    } catch (err) {
+      setLoadError(formatRequestError(err));
+    }
   };
 
   const saveGoal = async () => {
@@ -94,7 +112,19 @@ export default function Finance() {
     }
   };
 
-  if (!summary) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
+  if (loadError) {
+    return (
+      <div className="p-6" data-testid="finance-page">
+        <PageHeader title="Finance" description="Revenue, expenses and targets" />
+        <LoadError message={loadError} onRetry={load} testId="finance-error" />
+      </div>
+    );
+  }
+
+  // `goal` too, not just `summary`: the goal card dereferences it directly
+  // (goal.monthly_revenue_goal), so a null from /finance/goal crashed the
+  // render even though summary had loaded fine.
+  if (!summary || !goal) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
 
   const breakdownData = Object.entries(summary.expense_breakdown || {})
     .filter(([, v]) => v > 0)
@@ -196,7 +226,7 @@ export default function Finance() {
               <div>
                 <p className="text-sm">{e.description}</p>
                 <p className="text-[10px] font-mono text-carbon">
-                  {e.category} · {format(new Date(e.date), "MMM d, yyyy")} · <span className="uppercase">{EXPENSE_TYPE_LABELS[e.expense_type] || e.expense_type}</span>
+                  {e.category} · {safeFormat(e.date, "MMM d, yyyy")} · <span className="uppercase">{EXPENSE_TYPE_LABELS[e.expense_type] || e.expense_type}</span>
                 </p>
               </div>
               <div className="flex items-center gap-3">

@@ -14,34 +14,13 @@ import { Button } from "@/components/ui/button";
 
 const HELP_SECTIONS = [
   {
-    // First on purpose: it is the part of the app people have the fewest
-    // existing mental models for, so it needs explaining the most.
-    category: "AI Agents",
+    // The Lead Finder and the assistants are what remains of the AI in this
+    // product. The old "AI Agents" category described an autonomous SDR with
+    // nine agents, an Agent Monitor and a three-switch send gate — all of it
+    // deleted. Help that describes a feature the app does not have is worse
+    // than no help: it sends people looking for pages that 404.
+    category: "AI",
     items: [
-      {
-        icon: Bot, title: "What the AI actually is",
-        description: "Plain-English explanation of agents, assistants, and what is running behind the scenes.",
-        steps: [
-          "There are two kinds of AI here. An **assistant** waits for you to ask — you press a button, it writes something, you read it. The AI Assistant panel, the email writer and the proposal writer are all assistants.",
-          "An **agent** works on its own schedule. Nobody presses a button. It wakes up every few minutes, checks whether it has anything to do, does it, and records what happened. The nine AI SDR agents are all of this kind.",
-          "That difference is the whole reason for the Agent Monitor. An assistant that fails tells you immediately, because you are sat there waiting. An agent that fails does so quietly at 3am, so it needs somewhere to be watched.",
-          "Every agent has a spending limit and a time limit. If a job costs more or takes longer than its limit, it is stopped rather than allowed to run away. You can see both on the Agent Monitor.",
-          "Not every agent uses AI. Website Audits, scoring, sending and meeting proposals are all ordinary code — deliberately. A language model is used for judgement and for writing, never for facts the system already knows. A made-up meeting time is worse than a plainly-worded one.",
-          "Nothing runs unless the AI SDR module is switched on, and nothing is emailed unless three separate switches are all on. Off is the default at every level.",
-        ],
-      },
-      {
-        icon: Cpu, title: "Agent Monitor",
-        description: "One page showing every AI capability in the app — what it does, whether it is working, and what it costs.",
-        steps: [
-          "Open this first when something AI-related seems broken. It lists all 15 capabilities grouped by what they are for, whether or not they belong to the AI SDR.",
-          "Each card shows a success rate and how many times it has run. 'No runs yet' means exactly that — it has never been used, which is not the same as broken.",
-          "The Spend figure is an estimate based on token counts. It exists so a runaway loop shows up as money rather than as a surprise bill.",
-          "'Queued jobs' is the work waiting to happen. If that number climbs and never falls, the scheduler has stopped — there is a warning banner for this on the Agents page.",
-          "Click any recent run to open it: the exact input, the exact output, which AI provider answered, how long it took, and any guardrail that fired. Personal data is removed before a run is stored.",
-          "AI providers are listed at the bottom with the order they are tried in. All are free tiers. If one refuses or rate-limits, the next one is tried automatically — that fallback is what makes free plans usable rather than a demo.",
-        ],
-      },
       {
         icon: Sparkles, title: "AI Lead Finder",
         description: "Find real businesses anywhere in the world and let AI write the pitch. Free — no API key needed.",
@@ -51,67 +30,7 @@ const HELP_SECTIONS = [
           "A business with 'NO WEBSITE — opportunity' is exactly what it sounds like — usually your best prospect.",
           "Press 'AI Pitch' on any result. It suggests which of your services fit, explains why, and drafts both a cold email and a shorter WhatsApp message. You can copy either.",
           "'Add to Pipeline with this pitch' creates a CRM lead with the drafts attached, so you are not starting from a blank page later.",
-          "This is the hands-on tool: you choose each business and press each button. If you want that to happen on its own, that is the AI SDR below.",
-        ],
-      },
-      {
-        icon: Bot, title: "AI SDR — what it is",
-        description: "The autonomous version: finds businesses, researches them, writes emails, sends them, and handles the replies.",
-        steps: [
-          "Think of it as the AI Lead Finder with nobody pressing the buttons. It runs on a schedule and does the whole sequence itself.",
-          "The order it works in: find businesses → fill in missing details → check their website for gaps → research them → score them 0-100 → decide if they are worth contacting → write an email → wait for your approval → send it inside their business hours → read the reply.",
-          "You stay in control at the point that matters. By default every email waits for you to approve it, and you can edit the words before it goes.",
-          "It is designed around not sending. If someone replies, unsubscribes, bounces, or their deal closes, the sequence stops — and that is checked twice, once when the email is written and again just before it goes out, because things change in between.",
-          "Start in Simulate mode. The entire pipeline runs and stops one step before the send, marking the message as a rehearsal. Use it to read what the AI writes before any stranger does.",
-          "The switches, in the order they must be on: Module (AI SDR page) → Email channel (same page) → LIVE mode (Outreach page). All three are off when the system is first installed.",
-        ],
-      },
-      {
-        icon: Database, title: "AI SDR — Lead Database",
-        description: "Every business the AI has found or you have imported, with its score and research.",
-        steps: [
-          "'Discover' searches OpenStreetMap for businesses by type and city. 'Import CSV' takes a list you already have — it only needs one column named Company, Business or Name.",
-          "In the Discover dialog, switch on 'Also create CRM leads' — it is off by default, and without it you get businesses but nothing that can be contacted.",
-          "Click any lead, then 'Enrich, audit & score'. This is the step people miss: only leads it marks as **qualified** can go into a campaign. Skip it and your campaign will have nothing to send to.",
-          "The score is not a guess by an AI — it is a fixed calculation, and the breakdown explains every point. If you disagree with a score, you can see exactly which rule caused it.",
-          "The website audit checks 19 things, but six of them cannot be measured without a full browser, which this cannot run. Those are reported as 'unmeasured' rather than as a pass — the system never claims to know something it does not.",
-        ],
-      },
-      {
-        icon: Megaphone, title: "AI SDR — Campaigns & Outreach",
-        description: "A sequence of emails pointed at a set of qualified leads, with your approval in the middle.",
-        steps: [
-          "A campaign is a name plus a sequence. Each step is an instruction to the writer, not a template — so every email is written for that specific business rather than filled into a form.",
-          "'I approve each email' is the default and the right starting point. 'Send automatically' removes you from the loop entirely — only use it once you trust the copy.",
-          "Leads are attached when you press Launch, not when you create the campaign. Only qualified leads appear in that list.",
-          "On the Outreach page, drafts wait under 'Approval queue'. Click one to read it. 'Facts this draft is grounded in' shows what it actually knows about that business — everything it claims must come from that list.",
-          "You can edit the subject and body before approving, and your edits are what gets sent.",
-          "'Reject, rewrite' throws the draft away and writes a fresh one. 'Reject, stop sequence' removes that lead from the campaign entirely.",
-          "Approved emails do not send immediately — they are scheduled for the recipient's next working hours, in their timezone, with a small random delay so a batch does not look machine-generated.",
-        ],
-      },
-      {
-        icon: Inbox, title: "AI SDR — Inbox",
-        description: "Replies, matched back to the email that earned them and sorted into what needs you.",
-        steps: [
-          "It checks your mailbox every few minutes and reads new replies. It never marks anything as read — you can keep using that mailbox normally and unread mail stays unread.",
-          "Each reply is sorted: interested, not now, an objection, wrong person, an unsubscribe request, a bounce, or a machine.",
-          "The important distinction is human versus machine. An out-of-office is **not** a reply — treating one as interest would stop your sequence permanently while the person never even read the email. Out-of-office pushes the next touch out by a week instead.",
-          "The Inbox opens on 'Needs you' rather than everything, because it is a work queue and not an archive.",
-          "'Unmatched' means the reply could not be tied to any campaign — usually because the sender's email client stripped the tracking headers. Somebody answered and is waiting, so those get a banner rather than a row that scrolls past.",
-          "If it gets a category wrong, change it in the reply's panel. That re-applies for real — correcting an 'interested' to an out-of-office actually restarts the stopped sequence.",
-        ],
-      },
-      {
-        icon: Send, title: "AI SDR — Deliverability",
-        description: "Whether your email will actually arrive. The least glamorous page and the one that decides everything.",
-        steps: [
-          "A sending identity is the address emails come from. It cannot send until SPF, DKIM and DMARC all pass — those are DNS records proving the mail is really from you.",
-          "'Check DNS' tests all four records and tells you which one is wrong. Do this before activating anything.",
-          "Warm-up is the three-week ramp from about 5 emails a day up to your target. This is not a limitation of the software — it is how Gmail and Outlook decide to trust a new domain. Sending 200 on day one gets you filtered for months.",
-          "'Volume & quota' is where you set how many new leads to start per day. New leads per day is not the same as emails per day: at 3 touches each, 30 leads a day means about 2,700 emails a month.",
-          "'Test a send' is the most useful button on this page. Enter any address and it shows you every gate in order and exactly which one is blocking. Use it whenever something will not send and you cannot work out why.",
-          "The suppression list is people who must never be contacted again — unsubscribes, bounces, complaints. It is permanent by design and is checked before every single send.",
+          "You choose each business and press each button. Nothing here goes out on its own.",
         ],
       },
       {
@@ -125,13 +44,12 @@ const HELP_SECTIONS = [
         ],
       },
       {
-        icon: Zap, title: "What is coming next",
-        description: "Built but waiting on approvals, and deliberately not built yet.",
+        icon: Bot, title: "Automated outreach",
+        description: "Not in the product right now.",
         steps: [
-          "**WhatsApp** — the system already ranks WhatsApp above email for India, and the sequencing does not assume email. What is missing is Meta's business verification and per-template approval, which takes weeks. That clock has to be started before any code matters.",
-          "**Meeting booking** — built. Once someone replies with interest, it can propose call times in their timezone and link to your booking page. It offers times rather than booking them itself, because a misread date is a missed meeting and the booking page already checks for clashes.",
-          "**Competitor analysis** — needs a web-search provider to be configured. None is at the moment.",
-          "**A/B testing of email copy** — deliberately not built. At 30 leads a day it would take months to produce a result you could trust, and a half-significant result is worse than none because people act on it.",
+          "There is no autonomous system here: nothing finds leads, writes emails or sends them on a schedule. Every AI feature waits for you to press a button.",
+          "Emails already sent by the previous system still honour their unsubscribe links, and anyone who opted out stays on the never-contact list.",
+          "If you are looking for campaigns, sequences or an agent monitor, they are not hidden behind a setting — they are not there.",
         ],
       },
     ],
@@ -341,11 +259,11 @@ export default function Help() {
   const { openAssistant } = useOutletContext();
 
   const guideSuggestions = [
-    "What is the difference between AI Lead Finder and the AI SDR?",
-    "How do I try the AI SDR without emailing anyone?",
-    "Why is my campaign not sending anything?",
+    "What can the AI in this dashboard actually do?",
+    "How do I find new leads and get a pitch written?",
     "What should I check every morning on the dashboard?",
     "How do I create and send an invoice?",
+    "How does a lead become a client?",
   ];
 
   const askGuide = (prompt = "Help me understand how to use this dashboard. Start with the most important modules and where I should click for common tasks.") => {
@@ -383,8 +301,8 @@ export default function Help() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button data-testid="guide-ai-sdr-btn" size="sm" variant="outline" className="border-white/10" onClick={() => askGuide("Explain the AI SDR in simple terms. What does it do on its own, where do I stay in control, and how do I try it without emailing anyone?")}>Explain the AI</Button>
-            <Button data-testid="guide-ai-notsending-btn" size="sm" variant="outline" className="border-white/10" onClick={() => askGuide("My AI SDR campaign is not sending anything. Walk me through every switch and setting that could be blocking it, in the order I should check them.")}>Nothing is sending</Button>
+            <Button data-testid="guide-ai-explain-btn" size="sm" variant="outline" className="border-white/10" onClick={() => askGuide("Explain what the AI in this dashboard can do, in simple terms. Which parts need me to press a button, and is anything automatic?")}>Explain the AI</Button>
+            <Button data-testid="guide-ai-leads-btn" size="sm" variant="outline" className="border-white/10" onClick={() => askGuide("Walk me through finding new leads and getting them into the pipeline, step by step.")}>Find leads</Button>
             <Button data-testid="guide-ai-startup-check-btn" size="sm" variant="outline" className="border-white/10" onClick={() => askGuide("Walk me through the dashboard checks I should do before starting work today.")}>Daily check</Button>
           </div>
         </div>

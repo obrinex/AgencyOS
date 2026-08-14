@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus, ChevronLeft, ChevronRight, Trash2, MapPin, Clock, Link2, Copy, Settings2, CalendarDays, Users,
+  CalendarClock, Ban,
 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
@@ -106,6 +107,43 @@ export default function Calendar() {
     toast.success("Meeting deleted");
     setOpen(false);
     load();
+  };
+
+  const [working, setWorking] = useState(false);
+
+  const cancelMeeting = async () => {
+    if (!editTarget) return;
+    setWorking(true);
+    try {
+      const { data } = await api.post(`/meetings/${editTarget.id}/cancel`, {
+        reason: form.notes || null,
+        notify: true,
+      });
+      const n = data.notified?.length || 0;
+      toast.success(n ? `Meeting cancelled — ${n} attendee(s) emailed` : "Meeting cancelled (no attendee email on file)");
+      setOpen(false);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally { setWorking(false); }
+  };
+
+  const rescheduleMeeting = async () => {
+    if (!editTarget || !form.start_time) return;
+    setWorking(true);
+    try {
+      const { data } = await api.post(`/meetings/${editTarget.id}/reschedule`, {
+        start_time: new Date(form.start_time).toISOString(),
+        end_time: form.end_time ? new Date(form.end_time).toISOString() : null,
+        notify: true,
+      });
+      const n = data.notified?.length || 0;
+      toast.success(n ? `Rescheduled — ${n} attendee(s) emailed the new time` : "Rescheduled (no attendee email on file)");
+      setOpen(false);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally { setWorking(false); }
   };
 
   const bookingUrl = booking ? `${window.location.origin}/book/${booking.slug}` : "";
@@ -263,7 +301,30 @@ export default function Calendar() {
               <div className="space-y-1"><Label>End</Label><Input data-testid="meeting-form-end" type="datetime-local" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} className="bg-surface-2 border-white/10" /></div>
             </div>
             <div className="space-y-1"><Label>Location</Label><Input data-testid="meeting-form-location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="bg-surface-2 border-white/10" /></div>
-            <div className="space-y-1"><Label>Notes</Label><Textarea data-testid="meeting-form-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+            <div className="space-y-1"><Label>Notes{editTarget ? " / cancellation reason" : ""}</Label><Textarea data-testid="meeting-form-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="bg-surface-2 border-white/10" /></div>
+
+            {editTarget && editTarget.status === "cancelled" && (
+              <div className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger" data-testid="cancelled-notice">
+                This meeting is cancelled. Rescheduling it will re-activate it and email the attendee the new time.
+              </div>
+            )}
+
+            {editTarget && (
+              <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-surface-2/50 p-2" data-testid="meeting-actions">
+                <Button type="button" variant="outline" className="border-white/10 gap-1.5 h-8 text-xs"
+                  data-testid="meeting-reschedule-btn" disabled={working} onClick={rescheduleMeeting}>
+                  <CalendarClock className="h-3.5 w-3.5" /> Reschedule &amp; email
+                </Button>
+                {editTarget.status !== "cancelled" && (
+                  <Button type="button" variant="outline" className="border-white/10 text-danger gap-1.5 h-8 text-xs"
+                    data-testid="meeting-cancel-btn" disabled={working} onClick={cancelMeeting}>
+                    <Ban className="h-3.5 w-3.5" /> Cancel &amp; notify
+                  </Button>
+                )}
+                <span className="ml-auto self-center text-[11px] text-graphite">Reschedule uses the Start/End above</span>
+              </div>
+            )}
+
             <DialogFooter className="gap-2">
               {editTarget && (
                 <Button type="button" variant="outline" className="border-white/10 text-danger gap-1.5" data-testid="meeting-delete-btn" onClick={() => remove(editTarget.id)}>

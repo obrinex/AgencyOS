@@ -117,12 +117,15 @@ async def get_project(project_id: str, user: dict = Depends(require_staff)):
 
 @router.put("/projects/{project_id}")
 async def update_project(project_id: str, payload: ProjectUpdate, user: dict = Depends(require_staff)):
+    before = await db.projects.find_one({"_id": to_object_id(project_id)})
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = await db.projects.update_one({"_id": to_object_id(project_id)}, {"$set": updates})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Project not found")
     project = await db.projects.find_one({"_id": to_object_id(project_id)})
+    # A status change used to draft a client update email for approval through
+    # the agent layer. Removed with it - status changes are now silent.
     return serialize_doc(project)
 
 

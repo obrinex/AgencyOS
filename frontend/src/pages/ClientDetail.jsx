@@ -19,11 +19,13 @@ export default function ClientDetail() {
   const navigate = useNavigate();
   const [client, setClient] = useState(null);
   const [portalOpen, setPortalOpen] = useState(false);
-  const [portalForm, setPortalForm] = useState({ email: "", name: "" });
+  const [portalForm, setPortalForm] = useState({ email: "", name: "", custom_password: "" });
   const [creds, setCreds] = useState(null);
   const [portalCredsOpen, setPortalCredsOpen] = useState(false);
   const [portalCreds, setPortalCreds] = useState(null);
   const [resettingPortalPassword, setResettingPortalPassword] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetCustom, setResetCustom] = useState("");
 
   const load = async () => {
     const { data } = await api.get(`/clients/${id}`);
@@ -65,11 +67,14 @@ export default function ClientDetail() {
     }
   };
 
-  const resetPortalPassword = async () => {
+  const resetPortalPassword = async (customPassword) => {
     setResettingPortalPassword(true);
     try {
-      const { data } = await api.post(`/clients/${id}/portal-user/reset-password`);
+      const body = customPassword ? { custom_password: customPassword } : {};
+      const { data } = await api.post(`/clients/${id}/portal-user/reset-password`, body);
       setPortalCreds(data);
+      setResetOpen(false);
+      setResetCustom("");
       setPortalCredsOpen(true);
       toast.success("Client portal password reset");
       load();
@@ -114,7 +119,7 @@ export default function ClientDetail() {
             <Button data-testid="view-portal-user-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={viewPortalCredentials}>
               <Eye className="h-3.5 w-3.5" /> View Login
             </Button>
-            <Button data-testid="reset-portal-password-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={resetPortalPassword} disabled={resettingPortalPassword}>
+            <Button data-testid="reset-portal-password-btn" size="sm" variant="outline" className="gap-1.5 border-white/10" onClick={() => { setResetCustom(""); setResetOpen(true); }} disabled={resettingPortalPassword}>
               <RefreshCw className={`h-3.5 w-3.5 ${resettingPortalPassword ? "animate-spin" : ""}`} /> Reset Password
             </Button>
             <Button data-testid="revoke-portal-user-btn" size="sm" variant="outline" className="gap-1.5 border-white/10 text-danger hover:text-danger" onClick={revokePortalAccess}>
@@ -209,7 +214,8 @@ export default function ClientDetail() {
             <form onSubmit={createPortalUser} className="space-y-3">
               <div className="space-y-1"><Label>Contact Name</Label><Input data-testid="portal-form-name" required value={portalForm.name} onChange={(e) => setPortalForm({ ...portalForm, name: e.target.value })} className="bg-surface-2 border-white/10" /></div>
               <div className="space-y-1"><Label>Email</Label><Input data-testid="portal-form-email" type="email" required value={portalForm.email} onChange={(e) => setPortalForm({ ...portalForm, email: e.target.value })} className="bg-surface-2 border-white/10" /></div>
-              <DialogFooter><Button type="submit" data-testid="portal-form-submit">Create Access</Button></DialogFooter>
+              <div className="space-y-1"><Label>Password <span className="text-graphite font-normal">(optional — leave blank to auto-generate)</span></Label><Input data-testid="portal-form-password" value={portalForm.custom_password} onChange={(e) => setPortalForm({ ...portalForm, custom_password: e.target.value })} placeholder="Auto-generated if blank" className="bg-surface-2 border-white/10" />{portalForm.custom_password && portalForm.custom_password.trim().length < 8 && <p className="text-xs text-danger">Must be at least 8 characters.</p>}</div>
+              <DialogFooter><Button type="submit" data-testid="portal-form-submit" disabled={!!portalForm.custom_password && portalForm.custom_password.trim().length < 8}>Create Access</Button></DialogFooter>
             </form>
           ) : (
             <div className="space-y-3" data-testid="portal-credentials-result">
@@ -221,6 +227,28 @@ export default function ClientDetail() {
               <p className="text-xs text-graphite">These credentials are stored here for portal access. No email is sent automatically.</p>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetOpen} onOpenChange={(o) => { setResetOpen(o); if (!o) setResetCustom(""); }}>
+        <DialogContent className="bg-surface-1 border-white/10" data-testid="reset-password-dialog">
+          <DialogHeader><DialogTitle>Reset Portal Password</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-graphite">Set a password of your choice, or generate a random one. Either way you'll get the new login to share with the client.</p>
+            <div className="space-y-1">
+              <Label>Custom password <span className="text-graphite font-normal">(optional)</span></Label>
+              <Input data-testid="reset-custom-password" value={resetCustom} onChange={(e) => setResetCustom(e.target.value)} placeholder="At least 8 characters" className="bg-surface-2 border-white/10" />
+              {resetCustom && resetCustom.trim().length < 8 && <p className="text-xs text-danger">Must be at least 8 characters.</p>}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" className="border-white/10" onClick={() => resetPortalPassword()} disabled={resettingPortalPassword} data-testid="reset-random-btn">
+              Generate random
+            </Button>
+            <Button onClick={() => resetPortalPassword(resetCustom.trim())} disabled={resettingPortalPassword || resetCustom.trim().length < 8} data-testid="reset-custom-btn">
+              Set this password
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

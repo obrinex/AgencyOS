@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from database import db, serialize_doc, serialize_list, to_object_id
 from auth_utils import get_current_user, require_staff, log_audit
@@ -28,6 +28,7 @@ class ProposalUpdate(BaseModel):
 class ContractCreate(BaseModel):
     title: str
     client_id: str
+    project_id: Optional[str] = None  # parity with invoices (§1.1.1 project linkage)
     file_id: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -51,6 +52,13 @@ class ContractUpdate(BaseModel):
 
 class ShareEmailRequest(BaseModel):
     email: str
+    # Conditional CTA buttons (same contract as the Emails section): each
+    # renders only when its link is provided / requested.
+    demo_url: Optional[str] = Field(default=None, pattern=r"^https://\S+$",
+                                    max_length=500)
+    include_booking_button: bool = False
+    booking_url: Optional[str] = Field(default=None, pattern=r"^https://\S+$",
+                                       max_length=500)
 
 
 class ShareContractRequest(BaseModel):
@@ -132,7 +140,12 @@ async def share_proposal_email(proposal_id: str, payload: ShareEmailRequest, use
         pdf_bytes = await build_proposal_pdf_bytes(proposal)
     except Exception:
         pass  # never block the share email on PDF rendering
-    await send_proposal_share_email(payload.email, proposal["title"], proposal["share_token"], pdf_bytes=pdf_bytes)
+    from email_service import resolve_booking_url
+    booking_url = (await resolve_booking_url(payload.booking_url)
+                   if (payload.include_booking_button or payload.booking_url) else None)
+    await send_proposal_share_email(payload.email, proposal["title"], proposal["share_token"],
+                                    pdf_bytes=pdf_bytes,
+                                    demo_url=payload.demo_url, booking_url=booking_url)
     await log_audit(user["id"], "share_proposal", "proposal", proposal_id)
     return {"message": "Proposal shared", "share_token": proposal["share_token"]}
 
@@ -413,4 +426,6 @@ async def sign_contract_staff(contract_id: str, payload: SignRequest, user: dict
     }})
     await log_audit(user["id"], "sign_contract", "contract", contract_id)
     updated = await db.contracts.find_one({"_id": contract["_id"]})
+    # The milestone hook that fired here (Telegram alert + onboarding email)
+    # belonged to the agent layer and went with it.
     return serialize_doc(updated)

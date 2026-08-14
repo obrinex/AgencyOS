@@ -239,8 +239,8 @@ NICHE_PITCH_CONTEXT = {
 
 @router.post("/analyze")
 async def analyze_business(payload: AnalyzeRequest, user: dict = Depends(require_staff)):
-    from routers.ai import _get_client, NVIDIA_MODEL
-    client = _get_client()
+    from routers.ai import _select_provider, response_text
+    client, model, _ = _select_provider()
     b = payload.business
     context = NICHE_PITCH_CONTEXT.get(payload.niche, "small businesses need automation to save time and win customers")
 
@@ -261,7 +261,7 @@ async def analyze_business(payload: AnalyzeRequest, user: dict = Depends(require
     )
     try:
         resp = await client.chat.completions.create(
-            model=NVIDIA_MODEL,
+            model=model,
             messages=[{"role": "system", "content": "You output only valid JSON. No markdown fences, no commentary."},
                       {"role": "user", "content": prompt}],
         )
@@ -269,7 +269,11 @@ async def analyze_business(payload: AnalyzeRequest, user: dict = Depends(require
         raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"AI pitch generation failed: {str(exc)}")
-    raw = resp.choices[0].message.content.strip()
+    # Outside the try above on purpose - that block only guards the network
+    # call. A filtered response is a 502 from response_text(), not a silent
+    # fallback into the JSONDecodeError branch below, which would manufacture
+    # a "pitch" out of an empty string.
+    raw = response_text(resp)
     if raw.startswith("```"):
         raw = raw.strip("`").lstrip("json").strip()
     try:

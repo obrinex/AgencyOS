@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from database import db, serialize_doc, serialize_list, to_object_id
-from auth_utils import get_current_user, require_staff, require_client
+from auth_utils import get_current_user, require_staff, require_client, require_admin, log_audit
 
 router = APIRouter(prefix="/api/tickets", tags=["support"])
 
@@ -58,6 +58,26 @@ async def update_ticket(ticket_id: str, payload: TicketUpdate, user: dict = Depe
         raise HTTPException(status_code=404, detail="Ticket not found")
     ticket = await db.tickets.find_one({"_id": to_object_id(ticket_id)})
     return serialize_doc(ticket)
+
+
+@router.delete("/{ticket_id}")
+async def delete_ticket(ticket_id: str, user: dict = Depends(require_admin)):
+    """Permanently delete a ticket (admin only).
+
+    Still clears `velliom_ticket_escalations`. The agent that wrote those rows
+    is gone, but rows it already wrote are in the database - and the collection
+    was deliberately left in place rather than dropped, so this keeps cleaning
+    up after it.
+    """
+    result = await db.tickets.delete_one({"_id": to_object_id(ticket_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        await db.velliom_ticket_escalations.delete_many({"ticket_id": ticket_id})
+    except Exception:
+        pass
+    await log_audit(user["id"], "delete_ticket", "ticket", ticket_id)
+    return {"message": "Ticket deleted"}
 
 
 @router.post("/{ticket_id}/messages")

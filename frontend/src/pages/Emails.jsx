@@ -24,6 +24,11 @@ export default function Emails() {
   const [drafting, setDrafting] = useState(false);
   const [sending, setSending] = useState(false);
   const [expanded, setExpanded] = useState(null);
+  // CTA buttons: each appears in the email only when its link is provided /
+  // enabled, so no email carries a dead button.
+  const [demoUrl, setDemoUrl] = useState("");
+  const [bookingButton, setBookingButton] = useState(false);
+  const [bookingUrl, setBookingUrl] = useState("");
 
   const load = async () => {
     const [h, r] = await Promise.all([api.get("/emails"), api.get("/emails/recipients")]);
@@ -54,12 +59,20 @@ export default function Emails() {
     if (!to) { toast.error("Choose or enter a recipient email"); return; }
     setSending(true);
     try {
-      await api.post("/emails/send", { to, subject: draft.subject, body: draft.body, recipient_name: toName || null });
+      await api.post("/emails/send", {
+        to, subject: draft.subject, body: draft.body, recipient_name: toName || null,
+        demo_url: demoUrl.trim() || null,
+        include_booking_button: bookingButton,
+        booking_url: bookingUrl.trim() || null,
+      });
       toast.success(`Email sent to ${to}`);
       setDraft(null);
       setInstruction("");
       setTo("");
       setToName("");
+      setDemoUrl("");
+      setBookingButton(false);
+      setBookingUrl("");
       load();
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
@@ -130,6 +143,31 @@ export default function Emails() {
               <div className="space-y-1">
                 <Label>Body (fully editable)</Label>
                 <Textarea data-testid="email-body" value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} rows={12} className="bg-surface-2 border-white/10" />
+              </div>
+              <div className="rounded-lg border border-white/10 bg-surface-2 p-3 space-y-3">
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-graphite">Buttons (optional)</p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Demo link — adds a "View the Demo" button</Label>
+                    <Input data-testid="email-demo-url" type="url" value={demoUrl}
+                      onChange={(e) => setDemoUrl(e.target.value)}
+                      placeholder="https://… (leave empty for no demo button)"
+                      className="bg-surface-1 border-white/10" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="flex items-center gap-2 text-xs text-ash cursor-pointer pt-1">
+                      <input type="checkbox" data-testid="email-booking-toggle" checked={bookingButton}
+                        onChange={(e) => setBookingButton(e.target.checked)} />
+                      Add a "Book a Meeting" button
+                    </label>
+                    {bookingButton && (
+                      <Input data-testid="email-booking-url" type="url" value={bookingUrl}
+                        onChange={(e) => setBookingUrl(e.target.value)}
+                        placeholder="custom link (empty = your booking page)"
+                        className="bg-surface-1 border-white/10" />
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-graphite">Nothing is sent until you click Send.</p>

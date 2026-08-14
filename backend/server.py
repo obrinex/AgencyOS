@@ -6,14 +6,15 @@ load_dotenv(ROOT_DIR / ".env")
 
 import logging
 from fastapi import FastAPI, APIRouter
+from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 import os
 
-from database import db, client, create_indexes
+from database import db, client, create_indexes, InvalidIdError
 from seed import seed_admin, seed_company_settings
 
-from routers import auth, crm, clients, portal, projects, finance, documents, support, knowledge, vault, files, notifications, dashboard, search, ai, settings, meetings, automations, public, notes, bookings, leadform, leadfinder, emails, payment_links, sdr, ai_agents
+from routers import auth, crm, clients, portal, projects, finance, documents, support, knowledge, vault, files, notifications, dashboard, search, ai, settings, meetings, automations, public, notes, bookings, leadform, leadfinder, emails, payment_links, chat, policies
 from reminders import reminder_loop, daily_loop
 
 IS_PRODUCTION = os.environ.get("APP_ENV", "development").lower() == "production"
@@ -41,6 +42,19 @@ app = FastAPI(
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc",
 )
+
+@app.exception_handler(InvalidIdError)
+async def invalid_id_handler(request, exc: InvalidIdError):
+    """A malformed id in the URL is a bad request, not a server fault.
+
+    `to_object_id` is called by nearly every route that takes an id, and its
+    exception reached no handler - so `/api/leads/not-an-id` answered 500 and
+    logged a stack trace. Mapping it here fixes every one of those routes at
+    once, and the type is narrow enough that a genuine internal `ValueError`
+    still surfaces as the 500 it is.
+    """
+    return JSONResponse(status_code=400, content={"detail": "Invalid id"})
+
 
 api_router = APIRouter(prefix="/api")
 
@@ -76,8 +90,8 @@ app.include_router(leadform.router)
 app.include_router(leadfinder.router)
 app.include_router(emails.router)
 app.include_router(payment_links.router)
-app.include_router(sdr.router)
-app.include_router(ai_agents.router)
+app.include_router(chat.router)
+app.include_router(policies.router)
 
 allowed_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", os.environ.get("FRONTEND_URL", "http://localhost:3000")).split(",") if origin.strip()]
 if "*" in allowed_origins:

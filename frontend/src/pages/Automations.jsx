@@ -1,20 +1,42 @@
 import { useEffect, useState } from "react";
 import { Zap, CheckCircle2, XCircle } from "lucide-react";
-import api from "@/lib/api";
+import api, { formatRequestError } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import LoadError from "@/components/LoadError";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDistanceToNow } from "date-fns";
+import { safeDistanceToNow } from "@/lib/dates";
 
 const TRIGGER_LABELS = { deal_won: "Deal Won → Client Onboarding", meeting_booked: "Meeting Booked → Prep Automation" };
 
 export default function Automations() {
   const [logs, setLogs] = useState(null);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    api.get("/automations/logs").then((r) => setLogs(r.data));
-  }, []);
+  // The `.then()` here used to have no `.catch()`. On any failure `logs`
+  // stayed null and the skeleton below rendered forever - indistinguishable
+  // from loading, and from having no automations at all.
+  const load = async () => {
+    setError(null);
+    try {
+      const { data } = await api.get("/automations/logs");
+      setLogs(data);
+    } catch (err) {
+      setError(formatRequestError(err));
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  if (error) {
+    return (
+      <div className="p-6" data-testid="automations-page">
+        <PageHeader title="Automation Center" description="Every automated workflow run across AgencyOS" />
+        <LoadError message={error} onRetry={load} testId="automations-error" />
+      </div>
+    );
+  }
 
   if (!logs) return <div className="p-6"><Skeleton className="h-64 bg-surface-1" /></div>;
 
@@ -32,10 +54,12 @@ export default function Automations() {
                   {log.status === "success" ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-danger" />}
                   {TRIGGER_LABELS[log.trigger] || log.trigger}
                 </p>
-                <span className="text-[10px] font-mono text-carbon">{formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}</span>
+                <span className="text-[10px] font-mono text-carbon">{safeDistanceToNow(log.created_at)}</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {log.steps.map((s, i) => (
+                {/* `?? []` - older automation_log documents predate `steps`,
+                    and .map on undefined took out the whole page. */}
+                {(log.steps ?? []).map((s, i) => (
                   <span key={i} className="rounded-md border border-white/10 bg-surface-2 px-2 py-0.5 text-[10px] font-mono text-ash">{s.name}</span>
                 ))}
               </div>

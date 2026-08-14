@@ -1,27 +1,59 @@
-import os
 import json
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from openai import AsyncOpenAI
 
 from database import db
 from auth_utils import get_current_user, require_staff
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
-# NVIDIA NIM exposes an OpenAI-compatible API at integrate.api.nvidia.com
-NVIDIA_BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
+def _select_provider():
+    """(client, model, provider_key) from the platform provider chain.
+
+    One registry, one fallback order, one place to rotate a key. With only
+    NVIDIA_API_KEY set the chain resolves to NVIDIA.
+    """
+    import llm_providers as registry
+
+    chain = registry.chain()
+    if not chain:
+        raise HTTPException(
+            status_code=503,
+            detail="AI is not configured. Set one of: "
+                   + ", ".join(p["api_key_env"] for p in registry.describe()),
+        )
+    key, make_client, model = chain[0]
+    return make_client(), model, key
 
 
-def _get_client() -> AsyncOpenAI:
-    api_key = os.environ.get("NVIDIA_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="AI assistant is not configured (missing NVIDIA_API_KEY)")
-    return AsyncOpenAI(base_url=NVIDIA_BASE_URL, api_key=api_key)
+def response_text(resp) -> str:
+    """The assistant's text, or a 502 saying there wasn't any.
+
+    `message.content` is None whenever a provider *filters* a response rather
+    than answering it - a normal outcome, not an error, and one Gemini's
+    safety filters produce far more readily than the Llama deployments this
+    ran on before. The prompts here are cold sales copy naming a real
+    business, which is exactly the shape that trips a classifier.
+
+    `.strip()` on None is an AttributeError and a 500 with no explanation.
+
+    Failing loudly beats the alternative: an empty string stored as
+    `ai_draft_reply` reads as a successful draft right up until someone
+    opens it.
+    """
+    choices = getattr(resp, "choices", None) or []
+    text = ((choices[0].message.content or "") if choices else "").strip()
+    if not text:
+        raise HTTPException(
+            status_code=502,
+            detail="The AI provider returned no text - the response was most "
+                   "likely filtered. Retry, or reorder providers with "
+                   "LLM_PROVIDERS.",
+        )
+    return text
 
 
 class ChatRequest(BaseModel):
@@ -48,7 +80,10 @@ class GenerateProposalRequest(BaseModel):
 
 
 async def build_crm_context() -> str:
-    leads = await db.leads.find({}).sort("updated_at", -1).to_list(20)
+    # Soft-deleted leads excluded: this text goes into the model's prompt, and
+    # describing a deleted lead as current is a wrong answer with a confident
+    # tone attached.
+    leads = await db.leads.find({"deleted_at": None}).sort("updated_at", -1).to_list(20)
     clients = await db.clients.find({}).to_list(20)
     invoices = await db.invoices.find({}).to_list(50)
     revenue = sum(i["total"] for i in invoices if i["status"] == "paid")
@@ -66,29 +101,12 @@ AgencyOS module guide:
   it searches OpenStreetMap (free, no API key) for real businesses, and the "AI Pitch"
   button drafts a cold email and a WhatsApp message. "Add to Pipeline" creates a CRM
   lead with those drafts attached. You press every button.
-- AI SDR: the autonomous version of the above. Nine agents run on a schedule:
-  discover -> enrich -> website audit -> research -> score -> qualify -> write ->
-  approve -> send in the recipient's business hours -> read the reply. Pages:
-  /ai-sdr (on/off switch, channel switches, kill switch), /ai-sdr/leads (Lead Database;
-  "Enrich, audit & score" is required before a lead can enter a campaign),
-  /ai-sdr/campaigns, /ai-sdr/outreach (approval queue; Simulate vs LIVE),
-  /ai-sdr/inbox (replies), /ai-sdr/audits, /ai-sdr/deliverability (identities, DNS,
-  warm-up, quota, and "Test a send" which shows exactly which gate is blocking).
-- Agent Monitor (/ai-agents): every AI capability, success rates, estimated spend,
-  queued jobs, and per-run detail. Open this first when something AI-related looks wrong.
-- Three switches must all be on before any email can send, in this order:
-  Module (AI SDR page) -> Email channel (Outbound channels card, same page) ->
-  LIVE mode (Outreach page). All three ship off. Simulate mode runs the whole
-  pipeline and stops one step before sending, marking messages as rehearsals.
-- Agents vs assistants: an assistant waits for a button press (AI Assistant, email
-  writer, proposal writer); an agent runs on a schedule with no one watching.
-  Several SDR agents use no AI at all (website audit, scoring, sending, meeting
-  proposals) - a model is used for judgement and writing, never for facts the
-  system already knows.
-- Common cause of "nothing is sending": the lead was never qualified (run
-  "Enrich, audit & score"), or one of the three switches is off, or the sending
-  identity has not passed its DNS checks. "Test a send" on the Deliverability
-  page names the blocking gate directly.
+- There is no autonomous outreach system. Every AI feature here waits for a
+  button press: the AI Assistant, the email and proposal writers, the meeting
+  summariser, the Lead Finder's "AI Pitch". Nothing sends on a schedule and
+  nothing runs unattended. If someone asks about automated outreach, campaigns,
+  sequences, an agent monitor or an SDR, say plainly that the feature is not in
+  the product - do not guess at a page for it.
 - Contacts: individual people linked to companies/clients.
 - Clients: workspace for onboarding checklist, projects, invoices, contacts, tickets, contracts, and portal access.
 - Projects/Tasks: delivery tracking with Kanban, list, and timeline views; due tasks appear on Dashboard.
@@ -115,11 +133,11 @@ async def _build_history(user_id: str, session_id: str, limit: int = 10) -> list
 
 
 async def _stream_and_save(system: str, history: list, text: str, user_id: str, session_id: str, kind: str):
-    client = _get_client()
+    client, model, provider_key = _select_provider()
     messages = [{"role": "system", "content": system}] + history + [{"role": "user", "content": text}]
     try:
         stream = await client.chat.completions.create(
-            model=NVIDIA_MODEL,
+            model=model,
             messages=messages,
             stream=True,
         )
@@ -129,26 +147,16 @@ async def _stream_and_save(system: str, history: list, text: str, user_id: str, 
         raise HTTPException(status_code=502, detail=f"AI provider request failed: {str(exc)}")
 
     async def gen():
-        # Recorded here rather than around the whole handler: a streaming
-        # response returns before any tokens exist, so timing it outside the
-        # generator would log a few milliseconds and no usage.
-        from ai_platform import record_assistant
-
+        # Per-call run recording used to wrap this loop, writing token counts
+        # and estimated cost to the agent monitor. That monitor belonged to the
+        # agent layer and went with it; the transcript written below is now the
+        # only record that a call happened.
         full = ""
-        async with record_assistant(
-            _ASSISTANT_KEYS.get(kind, "crm_assistant"), user_id=user_id
-        ) as run:
-            async for chunk in stream:
-                delta = chunk.choices[0].delta.content if chunk.choices else None
-                if delta:
-                    full += delta
-                    yield f"data: {json.dumps({'delta': delta})}\n\n"
-            # Streaming responses carry no usage object, so tokens are
-            # approximated from the text. Flagged as an estimate everywhere
-            # it surfaces.
-            from sdr.agents.base.cost import approximate_tokens
-            run.tokens(approximate_tokens(system + text), approximate_tokens(full))
-            run.used(model=NVIDIA_MODEL, provider="nvidia")
+        async for chunk in stream:
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                full += delta
+                yield f"data: {json.dumps({'delta': delta})}\n\n"
 
         await db.ai_chat_messages.insert_one({
             "user_id": user_id, "session_id": session_id, "kind": kind,
@@ -178,45 +186,23 @@ def _local_assistant_reply(text: str, mode: str, context: str) -> str:
     )
 
 
-#: Which entry in the platform AI monitor each `kind` reports as. Keeps these
-#: pre-existing features visible alongside the SDR agents without rewriting
-#: them - see ai_platform.py.
-#: Keys are the `kind` values the existing handlers already pass through.
-_ASSISTANT_KEYS = {
-    "generate_email": "email_generator",
-    "generate_proposal": "proposal_generator",
-    "summarize_meeting": "meeting_summarizer",
-    "draft_reply": "lead_reply_drafter",
-    "chat": "crm_assistant",
-    "guide": "crm_assistant",
-}
-
-
 async def _complete_and_save(system: str, history: list, text: str, user_id: str, session_id: str, kind: str, mode: str = "general"):
     messages = [{"role": "system", "content": system}] + history + [{"role": "user", "content": text}]
-    from ai_platform import record_assistant
-
-    assistant_key = _ASSISTANT_KEYS.get(kind, "crm_assistant")
-    async with record_assistant(assistant_key, user_id=user_id) as run:
-        return await _complete_inner(
-            messages, system, text, user_id, session_id, kind, mode, run
-        )
+    return await _complete_inner(
+        messages, system, text, user_id, session_id, kind, mode
+    )
 
 
-async def _complete_inner(messages, system, text, user_id, session_id, kind, mode, run):
+async def _complete_inner(messages, system, text, user_id, session_id, kind, mode):
     try:
-        client = _get_client()
+        client, model, provider_key = _select_provider()
         resp = await client.chat.completions.create(
-            model=NVIDIA_MODEL,
+            model=model,
             messages=messages,
             stream=False,
             timeout=25,
         )
-        full = resp.choices[0].message.content.strip()
-        usage = getattr(resp, "usage", None)
-        if usage:
-            run.tokens(getattr(usage, "prompt_tokens", 0), getattr(usage, "completion_tokens", 0))
-        run.used(model=NVIDIA_MODEL, provider="nvidia")
+        full = response_text(resp)
     except Exception as exc:
         logger_msg = f"AI provider request failed; using local fallback: {str(exc)}"
         import logging
@@ -300,29 +286,34 @@ async def generate_proposal(payload: GenerateProposalRequest, user: dict = Depen
 
 async def generate_lead_reply(lead: dict) -> str:
     """Non-streaming helper: draft a reply email for an inbound lead. Returns the draft text."""
-    client = _get_client()
+    client, model, _ = _select_provider()
     contact_name = (lead.get("custom_fields") or {}).get("contact_name") or "there"
     prompt = (
         f"An inbound lead just submitted our agency's contact form.\n"
         f"Contact name: {contact_name}\nCompany: {lead.get('company')}\n"
-        f"Budget: {lead.get('revenue') or 'not specified'}\n"
+        # Currency-stamped: an unlabelled number invites the model to guess,
+        # and it guesses dollars.
+        f"Budget: {('INR %s' % format(lead['revenue'], ',.0f')) if lead.get('revenue') else 'not specified'}\n"
         f"Their message/notes: {lead.get('notes') or '(none)'}\n\n"
         f"Draft a warm, personalized reply email from our agency (Obrinex, an AI automation agency). "
         f"Reference their specific needs, briefly suggest how we can help, and propose a quick intro call. "
         f"Keep it under 150 words. Return ONLY the email body, no subject line."
     )
     resp = await client.chat.completions.create(
-        model=NVIDIA_MODEL,
+        model=model,
         messages=[{"role": "system", "content": "You write concise, warm, effective sales replies for an AI automation agency."},
                   {"role": "user", "content": prompt}],
     )
-    return resp.choices[0].message.content.strip()
+    return response_text(resp)
 
 
 @router.post("/leads/{lead_id}/draft-reply")
 async def draft_lead_reply(lead_id: str, user: dict = Depends(require_staff)):
-    from bson import ObjectId
-    lead = await db.leads.find_one({"_id": ObjectId(lead_id)})
+    # to_object_id, not a bare ObjectId(): a malformed id raised InvalidId out
+    # of bson and surfaced as a 500. Every other lead lookup in the app uses
+    # this helper, which turns it into the 404 it actually is.
+    from database import to_object_id
+    lead = await db.leads.find_one({"_id": to_object_id(lead_id), "deleted_at": None})
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     draft = await generate_lead_reply(lead)

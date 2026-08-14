@@ -76,6 +76,13 @@ let webpackConfig = {
       rules: {
         "react-hooks/rules-of-hooks": "error",
         "react-hooks/exhaustive-deps": "warn",
+        // Error, not warn. `useFxRate` and `describeRate` were used in
+        // Finance.jsx without ever being imported; no-undef flagged it, but
+        // vercel.json builds with CI=false so warnings don't fail the build.
+        // A guaranteed ReferenceError shipped to production and blanked the
+        // page - there is no version of an undefined identifier that is
+        // merely a style opinion.
+        "no-undef": "error",
       },
     },
   },

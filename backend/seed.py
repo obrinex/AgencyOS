@@ -1,7 +1,10 @@
+import logging
 import os
 from datetime import datetime, timezone
 from database import db
 from auth_utils import hash_password, verify_password
+
+logger = logging.getLogger(__name__)
 
 
 async def seed_admin():

@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import Sidebar, { MobileNav } from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import CommandPalette from "@/components/CommandPalette";
 import AIAssistant from "@/components/AIAssistant";
 
 export default function AppLayout() {
+  const { pathname } = useLocation();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantMode, setAssistantMode] = useState("general");
@@ -44,7 +46,13 @@ export default function AppLayout() {
           onOpenMobileNav={() => setMobileNavOpen(true)}
         />
         <main className="flex-1 overflow-y-auto scrollbar-thin">
-          <Outlet context={{ openAssistant }} />
+          {/* Inside <main>, so a crashing page leaves the sidebar and topbar
+              usable. Keyed by pathname: an error boundary holds its error
+              state forever otherwise, so navigating away from a broken page
+              would carry the error with you. */}
+          <ErrorBoundary key={pathname}>
+            <Outlet context={{ openAssistant }} />
+          </ErrorBoundary>
         </main>
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />

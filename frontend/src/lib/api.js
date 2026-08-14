@@ -48,48 +48,6 @@ function fallbackForGet(url = "") {
   if (url.includes("/meetings/google/status")) return { connected: false };
   if (url.includes("/bookings/settings")) return { enabled: false, slug: "", duration_minutes: 30, availability: [] };
   if (url.includes("/portal/overview")) return { projects: [], invoices: [], contracts: [], files: [], tickets: [] };
-  // The SDR endpoints below return objects, not lists. Without these the
-  // default [] would sail past the page's loading check and crash on
-  // property access the moment the backend hiccups.
-  if (url.includes("/sdr/overview")) return {
-    leads: { open: 0, won: 0, lost: 0, qualified: 0, needs_review: 0, by_stage: {} },
-    companies: { total: 0, enriched: 0, enrichment_coverage: 0 },
-    conversion: { won_rate: 0, sample_size: 0 },
-    health: { jobs_queued: 0, jobs_dead_letter: 0, agent_runs_failed: 0 },
-    recent_runs: [],
-  };
-  if (url.includes("/sdr/audits/summary")) return { signal_counts: [], unmeasured: [], audit_version: null };
-  if (url.includes("/sdr/identities")) return { identities: [] };
-  if (url.includes("/sdr/quota")) return {
-    plan: { label: "—", daily_limit: null, monthly_limit: null, note: null },
-    budget: { sent_this_month: 0, sent_today: 0, monthly_limit: null, daily_limit: null,
-              monthly_remaining: null, daily_remaining: null, exhausted: [] },
-    fit: { fits: true, new_leads_per_day: 0, touches_per_lead: 3,
-           projected_monthly_sends: 0, monthly_limit: null, warnings: [],
-           recommended_new_leads_per_day: null },
-    daily_new_leads_cap: 0,
-  };
-  if (url.includes("/sdr/suppression/summary")) return { by_reason: [] };
-  if (url.includes("/sdr/inbox/summary")) return { by_category: {}, total: 0, needs_human: 0, unmatched: 0 };
-  if (url.includes("/sdr/inbox")) return { items: [], next_cursor: null, has_more: false };
-  if (url.includes("/sdr/config/countries")) return { countries: [], default: null };
-  if (url.includes("/ai-agents/runs")) return { items: [], next_cursor: null, has_more: false };
-  if (url.includes("/ai-agents/overview")) return {
-    window_hours: 24, categories: {}, groups: [], unlisted: [],
-    totals: { total: 0, succeeded: 0, failed: 0, cost_usd: 0, success_rate: null },
-    jobs: { queued: 0, dead_letter: 0 }, daily_spend_usd: 0,
-    providers: [], active_provider_chain: [],
-  };
-  if (url.includes("/sdr/agents/runs")) return { items: [], next_cursor: null, has_more: false };
-  if (url.includes("/sdr/jobs/dead-letter")) return { jobs: [] };
-  if (url.includes("/sdr/agents")) return {
-    agents: [], stats: [], daily_spend_usd: 0,
-    jobs: { queued: 0, running: 0, succeeded: 0, dead_letter: 0, cancelled: 0, oldest_queued_at: null },
-  };
-  if (url.includes("/sdr/settings")) return {
-    module_enabled: false, kill_switch: false, kill_switch_reason: null, kill_switch_at: null,
-    channels: { email: false, whatsapp: false, sms: false, linkedin: false, voice: false },
-  };
   if (url.includes("/auth/me")) return null;
   return [];
 }
@@ -147,7 +105,19 @@ api.interceptors.response.use(
         return Promise.reject(error);
       }
     }
-    if ((original?.method || "get").toLowerCase() === "get" && !original?.url?.includes("/auth/") && (!error.response || error.response.status >= 500)) {
+    const isGet = (original?.method || "get").toLowerCase() === "get";
+    const transient = !error.response || error.response.status >= 500;
+    if (isGet && !original?.url?.includes("/auth/") && transient) {
+      // One silent retry first. A serverless cold start or a transient 5xx makes
+      // the very first request on a freshly-opened page fail even though the
+      // backend is healthy — retrying after a beat clears it without ever
+      // blanking the section or alarming the owner. Only a SECOND failure (a
+      // real, persistent problem) falls back with the toast.
+      if (!original._getRetry) {
+        original._getRetry = true;
+        await new Promise((r) => setTimeout(r, 1200));
+        return api(original);
+      }
       notifyFallback();
       return Promise.resolve({
         data: fallbackForGet(original.url),
