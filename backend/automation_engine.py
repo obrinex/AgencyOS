@@ -2,14 +2,50 @@ from datetime import datetime, timezone, timedelta
 from database import db, serialize_doc, next_counter
 
 
+def _deal_value(lead: dict) -> float:
+    """The lead's budget in INR, or 0 when none was recorded.
+
+    `revenue` is INR everywhere it is consumed - this function's own output
+    lands on an INR invoice - so a currency-free default is never safe to
+    invent. An absent budget claims nothing.
+    """
+    try:
+        return float(lead.get("revenue") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 async def _log_step(steps: list, name: str, status: str, detail: str = ""):
     steps.append({"name": name, "status": status, "detail": detail, "timestamp": datetime.now(timezone.utc).isoformat()})
 
 
 async def run_won_automation(lead: dict, user_id: str) -> dict:
-    """Triggered when a lead's stage changes to 'won'. Creates client, project, invoice, checklist, notification."""
+    """Triggered when a lead's stage changes to 'won'. Creates client, project, invoice, checklist, notification.
+
+    Runs at most once per lead. `converted_client_id` is stamped on the lead at
+    the end of a successful run, and its presence means the client, project,
+    tasks and invoice already exist - so a second call returns the existing ids
+    instead of minting a duplicate set.
+
+    The guard is here rather than only at the call site because the caller's
+    check was on the stage *transition*, which is a weaker thing than it looks:
+    any path that got a lead to won twice - a re-run, a retry, a stage
+    correction that went out and back - produced a second client, a second
+    onboarding project, four more tasks and a second draft invoice, with the
+    first set left pointing at nothing. Idempotency belongs in the operation
+    that has to be idempotent.
+    """
     steps = []
     now = datetime.now(timezone.utc).isoformat()
+
+    existing_client_id = lead.get("converted_client_id")
+    if existing_client_id:
+        existing_project = await db.projects.find_one({"client_id": existing_client_id})
+        return {
+            "client_id": existing_client_id,
+            "project_id": str(existing_project["_id"]) if existing_project else None,
+            "already_ran": True,
+        }
 
     client_doc = {
         "company_name": lead.get("company"),
@@ -87,10 +123,20 @@ async def run_won_automation(lead: dict, user_id: str) -> dict:
         "invoice_number": f"INV-{invoice_number:04d}",
         "client_id": client_id,
         "project_id": project_id,
-        "line_items": [{"description": "Onboarding / Setup Fee", "quantity": 1, "price": lead.get("revenue") or 500}],
-        "subtotal": lead.get("revenue") or 500,
+        # Zero, not a made-up figure, when the deal carries no budget.
+        #
+        # This used to fall back to 500. `revenue` is INR, so that produced a
+        # 500-rupee onboarding fee - roughly six dollars - which reads as a
+        # leftover from when the number was assumed to be dollars. An operator
+        # scanning a draft invoice will not question a plausible-looking 500;
+        # they will always question a 0.
+        #
+        # The invoice is created as a draft either way, so this is a blank to
+        # fill in rather than a bill anyone can send by accident.
+        "line_items": [{"description": "Onboarding / Setup Fee", "quantity": 1, "price": _deal_value(lead)}],
+        "subtotal": _deal_value(lead),
         "tax": 0,
-        "total": lead.get("revenue") or 500,
+        "total": _deal_value(lead),
         "status": "draft",
         "is_recurring": False,
         "recurrence_interval": None,

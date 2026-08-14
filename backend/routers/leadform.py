@@ -1,13 +1,33 @@
+import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, EmailStr
 
 from database import db, serialize_doc
 from auth_utils import require_staff
+from lead_stages import PROSPECT
+from rate_limit import check_rate_limit
 
 router = APIRouter(prefix="/api", tags=["leadform"])
+
+#: Per-IP ceiling on the public form. Low, because one submission is not cheap:
+#: it writes a lead, an activity and a contact, one notification per admin, a
+#: WhatsApp message to the owner and a background LLM call. Unthrottled, this
+#: endpoint spends real money on demand for anyone who finds the URL.
+FORM_RATE_LIMIT = 5
+FORM_RATE_WINDOW_SECONDS = 3600
+
+#: Second ceiling, per email address rather than per IP, so rotating addresses
+#: does not buy more attempts against the same identity.
+FORM_EMAIL_RATE_LIMIT = 3
+
+#: Inside this window a repeat submission from the same address updates the
+#: existing lead instead of creating a second one. Someone who fills the form
+#: twice because the first click did not visibly do anything is the common
+#: case, and two identical leads is the wrong response to it.
+RESUBMIT_WINDOW_HOURS = 24
 
 
 class LeadFormSettingsUpdate(BaseModel):
@@ -66,10 +86,48 @@ async def public_leadform_info(slug: str):
 
 
 @router.post("/public/leadform/{slug}")
-async def public_leadform_submit(slug: str, payload: LeadFormSubmit):
+async def public_leadform_submit(slug: str, payload: LeadFormSubmit, request: Request):
+    """Accept a public form submission.
+
+    Throttled twice - per IP and per email address - and deduplicated inside a
+    24-hour window. Before this, one URL with no authentication would, on every
+    request, notify every admin, send the owner a WhatsApp message and spend an
+    LLM call drafting a reply. That is not a spam problem, it is a billing one.
+    """
     settings = await db.leadform_settings.find_one({"slug": slug})
     if not settings or not settings.get("enabled"):
         raise HTTPException(status_code=404, detail="Form not found")
+
+    too_many = "Thanks — we already have your message and will be in touch."
+    await check_rate_limit(request, scope=f"leadform:{slug}",
+                           limit=FORM_RATE_LIMIT,
+                           window_seconds=FORM_RATE_WINDOW_SECONDS,
+                           detail=too_many)
+    await check_rate_limit(request, scope="leadform_email",
+                           key=payload.email.lower(),
+                           limit=FORM_EMAIL_RATE_LIMIT,
+                           window_seconds=FORM_RATE_WINDOW_SECONDS,
+                           detail=too_many)
+
+    # A repeat inside the window updates the existing lead rather than adding a
+    # twin to the board. The reply is identical either way - a submitter must
+    # not be able to tell from the response whether they are already in the CRM.
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(hours=RESUBMIT_WINDOW_HOURS)).isoformat()
+    recent = await db.leads.find_one({
+        "email": {"$regex": f"^{re.escape(payload.email)}$", "$options": "i"},
+        "created_at": {"$gte": cutoff},
+        "deleted_at": None,
+    })
+    if recent:
+        await db.lead_activities.insert_one({
+            "lead_id": str(recent["_id"]), "type": "note",
+            "content": f"Submitted the form again. Message: {payload.message or '(none)'}",
+            "created_by": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return {"message": "Thanks! We'll be in touch shortly."}
+
     now = datetime.now(timezone.utc).isoformat()
     lead_doc = {
         "company": payload.company,
@@ -79,8 +137,9 @@ async def public_leadform_submit(slug: str, payload: LeadFormSubmit):
         "source": "website_form", "priority": "medium",
         "email": payload.email, "phone": payload.phone, "linkedin": None,
         "notes": f"Contact: {payload.name}" + (f"\n\n{payload.message}" if payload.message else ""),
-        "tags": ["inbound"], "stage": "prospect", "custom_fields": {"contact_name": payload.name},
+        "tags": ["inbound"], "stage": PROSPECT, "custom_fields": {"contact_name": payload.name},
         "score": 0, "created_at": now, "updated_at": now, "converted_client_id": None,
+        "deleted_at": None,
     }
     res = await db.leads.insert_one(lead_doc)
     lead_id = str(res.inserted_id)

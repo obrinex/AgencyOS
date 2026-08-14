@@ -4,17 +4,19 @@ from fastapi import APIRouter, Depends
 from database import db, serialize_doc, serialize_list
 from auth_utils import require_staff
 from finance_utils import to_base
+from lead_stages import CLOSED_LOST, FUNNEL_ORDER, WON
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
-
-STAGES_ORDER = ["prospect", "contacted", "qualified", "discovery", "meeting_scheduled", "proposal_sent", "negotiation", "won"]
 
 
 @router.get("/stats")
 async def dashboard_stats(user: dict = Depends(require_staff)):
     invoices = await db.invoices.find({}).to_list(5000)
     expenses = await db.expenses.find({}).to_list(5000)
-    leads = await db.leads.find({}).to_list(5000)
+    # Soft-deleted leads are excluded here as they are everywhere else. Without
+    # this the funnel, the pipeline value and the conversion rate all counted
+    # leads the SDR module had already deleted.
+    leads = await db.leads.find({"deleted_at": None}).to_list(5000)
     projects = await db.projects.find({}).to_list(1000)
     tasks = await db.tasks.find({}).to_list(2000)
     meetings = await db.meetings.find({}).to_list(500)
@@ -26,14 +28,17 @@ async def dashboard_stats(user: dict = Depends(require_staff)):
     mrr = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i.get("is_recurring") and i["status"] == "paid")
     arr = mrr * 12
 
-    active_leads = [ld for ld in leads if ld["stage"] not in ("won", "lost", "rejected")]
+    # `cold` and `archived` count as closed now that they are in CLOSED_LOST.
+    # Both were previously counted as live pipeline, which overstated its value
+    # by every deal that had gone quiet or been shelved.
+    active_leads = [ld for ld in leads if ld.get("stage") not in (WON,) + CLOSED_LOST]
     pipeline_value = sum(ld.get("revenue") or 0 for ld in active_leads)
-    won_leads = [ld for ld in leads if ld["stage"] == "won"]
-    total_closed = len(won_leads) + len([ld for ld in leads if ld["stage"] in ("lost", "rejected")])
+    won_leads = [ld for ld in leads if ld.get("stage") == WON]
+    total_closed = len(won_leads) + len([ld for ld in leads if ld.get("stage") in CLOSED_LOST])
     conversion_rate = round((len(won_leads) / total_closed) * 100, 1) if total_closed else 0
     avg_deal_size = round(sum(ld.get("revenue") or 0 for ld in won_leads) / len(won_leads), 2) if won_leads else 0
 
-    funnel = [{"stage": s, "count": len([ld for ld in leads if ld["stage"] == s])} for s in STAGES_ORDER]
+    funnel = [{"stage": s, "count": len([ld for ld in leads if ld.get("stage") == s])} for s in FUNNEL_ORDER]
 
     now = datetime.now(timezone.utc)
     today_str = now.date().isoformat()

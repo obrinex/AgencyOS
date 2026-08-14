@@ -1,12 +1,21 @@
+// The board renders one column per key here and silently drops leads whose
+// stage is not in this map, so it has to stay in step with `backend/
+// lead_stages.py` — that file is the source of truth and lists the same
+// stages in the same order. A stage missing from here is a lead that exists
+// in the database, counts toward the header total, and appears nowhere.
+//
+// `interested` and `archived` are both set by the AI SDR engine. `interested`
+// was added here first and only here, which fixed the display half and left
+// the write half failing: the CRM's own PATCH endpoint still rejected the
+// stage this dropdown offered.
 export const STAGE_CONFIG = {
   prospect: { label: "Prospect", color: "graphite" },
   contacted: { label: "Contacted", color: "info" },
-  // Added for the AI SDR pipeline. It must live here rather than only in the
-  // SDR module: CRMPipeline groups by STAGES_LIST and silently drops leads in
-  // an unknown stage (crm/CRMPipeline.jsx:53), so a lead that reached
-  // "interested" would vanish from the board.
-  interested: { label: "Interested", color: "info" },
+  // Ordered to match `lead_stages.STAGES`, which follows the SDR transition
+  // graph: a lead is qualified before it is contacted, and only shows interest
+  // after. This puts Interested one column to the right of where it was.
   qualified: { label: "Qualified", color: "info" },
+  interested: { label: "Interested", color: "info" },
   discovery: { label: "Discovery", color: "info" },
   meeting_scheduled: { label: "Meeting Scheduled", color: "warning" },
   proposal_sent: { label: "Proposal Sent", color: "warning" },
@@ -15,7 +24,13 @@ export const STAGE_CONFIG = {
   lost: { label: "Lost", color: "danger" },
   rejected: { label: "Rejected", color: "danger" },
   cold: { label: "Cold", color: "graphite" },
+  archived: { label: "Archived", color: "graphite" },
 };
+
+// Winning a deal creates a client, a project and a draft invoice, so the move
+// is one-way — the API refuses to leave it (routers/crm.py patch_stage) and
+// the UI should not offer what the API will reject.
+export const TERMINAL_STAGES = ["won"];
 
 export const STAGES_LIST = Object.keys(STAGE_CONFIG);
 

@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Globe, Mail, Phone, MapPin, Building2, Send, Trash2, Sparkles, Copy, Loader2 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
+import { formatMoney } from "@/lib/currency";
 import StatusBadge from "@/components/StatusBadge";
-import { STAGE_CONFIG, STAGES_LIST, PRIORITY_CONFIG } from "@/lib/statusConfig";
+import { STAGE_CONFIG, STAGES_LIST, TERMINAL_STAGES, PRIORITY_CONFIG } from "@/lib/statusConfig";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,14 +46,21 @@ export default function LeadDetail() {
   }, [id]);
 
   const changeStage = async (stage) => {
+    if (stage === lead.stage) return;
     try {
       const { data } = await api.patch(`/leads/${id}/stage`, { stage });
-      if (data.automation) toast.success("Deal won! Client, project & invoice auto-generated.", { duration: 5000 });
+      if (data.automation && !data.automation.already_ran) {
+        toast.success("Deal won! Client, project & invoice auto-generated.", { duration: 5000 });
+      }
       load();
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     }
   };
+
+  // Winning a deal is one-way — it created a client, a project and an invoice.
+  // The select is disabled rather than hidden so the stage stays readable.
+  const isWon = lead && TERMINAL_STAGES.includes(lead.stage);
 
   const addNote = async () => {
     if (!note.trim()) return;
@@ -88,8 +96,14 @@ export default function LeadDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={lead.stage} onValueChange={changeStage}>
-            <SelectTrigger data-testid="lead-stage-select" className="w-48 bg-surface-1 border-white/10"><SelectValue /></SelectTrigger>
+          <Select value={lead.stage} onValueChange={changeStage} disabled={isWon}>
+            <SelectTrigger
+              data-testid="lead-stage-select"
+              title={isWon ? "Won deals cannot be reopened — this one already has a client, project and invoice." : undefined}
+              className="w-48 bg-surface-1 border-white/10"
+            >
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>{STAGES_LIST.map((s) => <SelectItem key={s} value={s}>{STAGE_CONFIG[s].label}</SelectItem>)}</SelectContent>
           </Select>
           <Button size="icon" variant="outline" className="border-white/10" data-testid="delete-lead-btn" onClick={deleteLead}><Trash2 className="h-4 w-4" /></Button>
@@ -105,7 +119,7 @@ export default function LeadDetail() {
         </Card>
         <Card className="p-4 bg-surface-1 border-white/10 text-sm">
           <p className="font-mono text-[10px] uppercase text-graphite mb-1">Est. Revenue</p>
-          <p className="font-display text-xl font-bold">${(lead.revenue || 0).toLocaleString()}</p>
+          <p className="font-display text-xl font-bold">{formatMoney(lead.revenue)}</p>
         </Card>
         <Card className="p-4 bg-surface-1 border-white/10 text-sm">
           <p className="font-mono text-[10px] uppercase text-graphite mb-1">Score</p>

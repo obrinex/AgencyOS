@@ -11,6 +11,7 @@ from reportlab.pdfgen import canvas
 
 from database import db, serialize_doc, serialize_list, to_object_id, next_counter
 from auth_utils import get_current_user, require_admin, require_staff, log_audit, require_module
+from lead_stages import OPEN_STAGES
 require_finance = require_module("finance")
 from email_service import send_invoice_email
 import fx
@@ -366,7 +367,9 @@ async def delete_expense(expense_id: str, user: dict = Depends(require_finance))
 async def finance_summary(user: dict = Depends(require_finance)):
     invoices = await db.invoices.find({}).to_list(5000)
     expenses = await db.expenses.find({}).to_list(5000)
-    leads = await db.leads.find({}).to_list(5000)
+    # Soft-deleted leads excluded, as everywhere else - they were inflating the
+    # forecast with pipeline the SDR module had already written off.
+    leads = await db.leads.find({"deleted_at": None}).to_list(5000)
 
     revenue = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] == "paid")
     outstanding = sum(to_base(i["total"], i.get("conversion_rate")) for i in invoices if i["status"] in ("sent", "overdue", "partial", "viewed"))
@@ -425,7 +428,10 @@ async def get_revenue_goal(user: dict = Depends(require_finance)):
     days_in_month = (now.replace(month=now.month % 12 + 1, day=1) - timedelta(days=1)).day if now.month != 12 else 31
     projected = round(mtd_revenue / day * days_in_month, 2) if day else 0
 
-    leads = await db.leads.find({"stage": {"$nin": ["won", "lost", "rejected", "cold"]}}).to_list(2000)
+    # OPEN_STAGES rather than an exclusion list: the old $nin was missing
+    # `archived`, so shelved deals still counted toward the pipeline forecast.
+    leads = await db.leads.find({"stage": {"$in": OPEN_STAGES},
+                                 "deleted_at": None}).to_list(2000)
     pipeline_value = sum(ld.get("revenue") or 0 for ld in leads)
 
     return {
