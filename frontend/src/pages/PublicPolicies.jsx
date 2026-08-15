@@ -4,6 +4,8 @@ import { ArrowLeft, FileText } from "lucide-react";
 import api from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import SiteFooter from "@/components/site/SiteFooter";
+import SiteCursor, { CursorField } from "@/components/site/SiteCursor";
+import { useSmoothScroll, useScrolledPast, Rise } from "@/components/site/SiteMotion";
 
 /** The legal documents, readable without an account.
  *
@@ -71,6 +73,12 @@ export default function PublicPolicies() {
   const [index, setIndex] = useState(null);
   const [doc, setDoc] = useState(null);
 
+  // The same layer the front page runs on: inertial scroll, the cursor and
+  // its field. A legal page that scrolls and feels like a different product
+  // is a legal page that looks like it was bolted on.
+  useSmoothScroll();
+  const scrolled = useScrolledPast(8);
+
   useEffect(() => {
     api.get("/public/policies").then(({ data }) => setIndex(data)).catch(() => setIndex([]));
   }, []);
@@ -84,8 +92,14 @@ export default function PublicPolicies() {
   return (
     <div className="obx-site relative min-h-[100dvh] text-foreground" data-testid="public-policies">
       <div aria-hidden className="obx-grid" />
+      <SiteCursor />
+      <CursorField />
 
-      <header className="border-b border-white/[0.07]">
+      <header
+        className={`sticky top-0 z-50 transition-colors duration-500 ${
+          scrolled ? "border-b border-white/[0.07] bg-white/[0.025] backdrop-blur-xl" : ""
+        }`}
+      >
         <div className="mx-auto flex h-[68px] w-full max-w-[1180px] items-center gap-4 px-6 sm:px-10">
           <Link to="/" className="obx-site-display text-[15px] tracking-[-0.02em] text-white">
             OBRINEX
@@ -103,28 +117,33 @@ export default function PublicPolicies() {
       <main className="mx-auto w-full max-w-[1180px] px-6 py-16 sm:px-10 sm:py-24">
         {!slug ? (
           <>
-            <p className="obx-site-mono text-[10px] text-graphite">Legal</p>
-            <h1 className="obx-site-display mt-4 text-[clamp(1.9rem,4.4vw,3.4rem)] text-white">
-              Policies
-            </h1>
-            <p className="mt-5 max-w-[52ch] text-[15px] leading-[1.8] text-graphite">
-              Everything that governs working with Obrinex, in full and without an account.
-            </p>
+            <Rise><p className="obx-site-mono text-[10px] text-graphite">Legal</p></Rise>
+            <Rise delay={0.08}>
+              <h1 className="obx-site-display mt-4 text-[clamp(1.9rem,4.4vw,3.4rem)] text-white">
+                Policies
+              </h1>
+            </Rise>
+            <Rise delay={0.16}>
+              <p className="mt-5 max-w-[52ch] text-[15px] leading-[1.8] text-ash">
+                Everything that governs working with Obrinex, in full and without an account.
+              </p>
+            </Rise>
 
             {index === null ? (
               <Skeleton className="mt-12 h-64 w-full rounded-2xl bg-surface-1" />
             ) : (
               <div className="mt-12 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                {index.map((p) => (
-                  <Link
-                    key={p.slug}
-                    to={`/policies/${p.slug}`}
-                    data-cursor="Read"
-                    className="obx-glass obx-lift obx-sheen flex items-center gap-3 rounded-2xl p-5"
-                  >
-                    <FileText className="h-4 w-4 shrink-0 text-primary" strokeWidth={1.5} />
-                    <span className="text-[15px] text-white">{p.title}</span>
-                  </Link>
+                {index.map((p, i) => (
+                  <Rise key={p.slug} delay={0.05 + (i % 3) * 0.08}>
+                    <Link
+                      to={`/policies/${p.slug}`}
+                      data-cursor="Read"
+                      className="obx-glass obx-lift obx-sheen flex h-full items-center gap-3 rounded-2xl p-5"
+                    >
+                      <FileText className="h-4 w-4 shrink-0 text-primary" strokeWidth={1.5} />
+                      <span className="text-[15px] text-white">{p.title}</span>
+                    </Link>
+                  </Rise>
                 ))}
               </div>
             )}
@@ -146,12 +165,16 @@ export default function PublicPolicies() {
             )}
             {doc && (
               <article className="mt-8 max-w-[70ch]">
-                <h1 className="obx-site-display text-[clamp(1.9rem,4.4vw,3rem)] text-white">
-                  {doc.title}
-                </h1>
-                <div className="mt-10">
-                  <Markdown text={doc.content} />
-                </div>
+                <Rise>
+                  <h1 className="obx-site-display text-[clamp(1.9rem,4.4vw,3rem)] text-white">
+                    {doc.title}
+                  </h1>
+                </Rise>
+                <Rise delay={0.1}>
+                  <div className="mt-10">
+                    <Markdown text={doc.content} />
+                  </div>
+                </Rise>
               </article>
             )}
           </>

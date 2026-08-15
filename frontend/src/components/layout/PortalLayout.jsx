@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, FolderKanban, Receipt, FolderOpen, LifeBuoy,
-  FileSignature, LogOut, MessageSquare, FileText, MoreHorizontal,
-  Sparkles, Compass,
+  FileSignature, LogOut, MessageSquare, FileText,
+  Sparkles, Compass, Menu, X,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePortal } from "@/contexts/PortalContext";
 import ClientTwoFAPrompt from "@/components/ClientTwoFAPrompt";
 import NotificationBell from "@/components/NotificationBell";
 import { useUnreadCounts } from "@/lib/useNotifications";
-import { NavRail, TabBar, MoreSheet } from "@/components/portal/PortalNav";
+import { NavRail } from "@/components/portal/PortalNav";
 import OnboardingGate from "@/components/portal/OnboardingGate";
 import PortalTour from "@/components/portal/PortalTour";
 import { PageTransition, SwapUp } from "@/components/motion";
@@ -32,19 +32,16 @@ import { PageTransition, SwapUp } from "@/components/motion";
  */
 
 const NAV = [
-  { key: "/portal", label: "Overview", short: "Home", icon: LayoutDashboard, testId: "portal-nav-overview", primary: true },
-  { key: "/portal/projects", label: "Projects", short: "Work", icon: FolderKanban, testId: "portal-nav-projects", primary: true },
-  { key: "/portal/chat", label: "Messages", short: "Chat", icon: MessageSquare, testId: "portal-nav-chat", primary: true, badgeKey: "chat" },
-  { key: "/portal/assistant", label: "Assistant", short: "Ask", icon: Sparkles, testId: "portal-nav-assistant", primary: true },
+  { key: "/portal", label: "Overview", short: "Home", icon: LayoutDashboard, testId: "portal-nav-overview" },
+  { key: "/portal/projects", label: "Projects", short: "Work", icon: FolderKanban, testId: "portal-nav-projects" },
+  { key: "/portal/chat", label: "Messages", short: "Chat", icon: MessageSquare, testId: "portal-nav-chat", badgeKey: "chat" },
+  { key: "/portal/assistant", label: "Assistant", short: "Ask", icon: Sparkles, testId: "portal-nav-assistant" },
   { key: "/portal/invoices", label: "Invoices", icon: Receipt, testId: "portal-nav-invoices" },
   { key: "/portal/support", label: "Support", icon: LifeBuoy, testId: "portal-nav-support", badgeKey: "support" },
   { key: "/portal/contracts", label: "Contracts", icon: FileSignature, testId: "portal-nav-contracts" },
   { key: "/portal/files", label: "Files", icon: FolderOpen, testId: "portal-nav-files" },
   { key: "/portal/policies", label: "Policies", icon: FileText, testId: "portal-nav-policies" },
 ];
-
-const PRIMARY = NAV.filter((n) => n.primary);
-const OVERFLOW = NAV.filter((n) => !n.primary);
 
 const TOUR = [
   {
@@ -145,7 +142,7 @@ export default function PortalLayout() {
   const { ready, blocked, showGuide, replayGuide } = usePortal();
   const location = useLocation();
   const navigate = useNavigate();
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
 
   const { counts, reload } = useUnreadCounts("/portal/unread", { enabled: ready && !blocked });
 
@@ -158,24 +155,36 @@ export default function PortalLayout() {
 
   const go = useCallback(
     (key) => {
-      setMoreOpen(false);
+      setNavOpen(false);
       navigate(key);
     },
     [navigate]
   );
 
   useEffect(() => {
-    setMoreOpen(false);
+    setNavOpen(false);
     reload();
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Escape closes it, and the page behind must not scroll under a finger
+  // meant for the drawer.
+  useEffect(() => {
+    if (!navOpen) return undefined;
+    const onKey = (e) => e.key === "Escape" && setNavOpen(false);
+    window.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [navOpen]);
 
   const withBadges = (list) =>
     list.map((n) => ({ ...n, badge: n.badgeKey ? counts?.[n.badgeKey] || 0 : 0 }));
 
   if (!ready) return <div className="min-h-[100dvh] bg-black" />;
   if (blocked) return <OnboardingGate />;
-
-  const overflowActive = OVERFLOW.some((n) => n.key === activeKey);
 
   return (
     <div className="relative flex h-[100dvh] w-full overflow-hidden" data-testid="portal-layout">
@@ -196,6 +205,16 @@ export default function PortalLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="obx-aurora flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.07] px-4 md:h-16 md:px-6">
+          <button
+            type="button"
+            onClick={() => setNavOpen(true)}
+            aria-label="Open navigation"
+            aria-expanded={navOpen}
+            data-testid="portal-mobile-menu-trigger"
+            className="obx-glass obx-lift relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl md:hidden"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
           <div className="relative z-10 md:hidden">
             <Brand compact />
           </div>
@@ -219,41 +238,63 @@ export default function PortalLayout() {
           </div>
         </header>
 
-        <main className="scrollbar-thin flex-1 overflow-y-auto pb-24 md:pb-0">
+        <main className="scrollbar-thin flex-1 overflow-y-auto">
           <PageTransition routeKey={location.pathname}>
             <Outlet />
           </PageTransition>
         </main>
       </div>
 
-      <TabBar
-          items={[
-            ...withBadges(PRIMARY),
-            {
-              key: "__more",
-              label: "More",
-              short: "More",
-              icon: MoreHorizontal,
-              badge: counts?.support || 0,
-              testId: "portal-tabbar-more",
-            },
-          ]}
-          activeKey={overflowActive ? "__more" : activeKey}
-          onSelect={(key) => (key === "__more" ? setMoreOpen(true) : go(key))}
-        groupId="client-tabs"
-        testId="portal-tabbar"
-        hideFrom="md"
-      />
+      {/* The phone drawer. There used to be a fixed tab bar across the foot of
+          every screen: it ate 64px of a 812px phone permanently, and its
+          overflow menu could not reach four of the nine sections without a
+          second tap. A drawer costs one tap, carries all nine, and gives the
+          screen back. */}
+      <div
+        data-testid="portal-mobile-nav"
+        aria-hidden={!navOpen}
+        className={cn(
+          "pointer-events-none fixed inset-0 z-50 transition md:hidden",
+          navOpen && "pointer-events-auto"
+        )}
+      >
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setNavOpen(false)}
+          className={cn(
+            "absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity duration-300",
+            navOpen ? "opacity-100" : "opacity-0"
+          )}
+        />
+        <aside
+          className={cn(
+            "absolute left-0 top-0 flex h-full w-[84vw] max-w-[320px] flex-col border-r border-white/10 bg-black/90 backdrop-blur-2xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
+            navOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+        >
+          <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-white/[0.07] px-4">
+            <Brand />
+            <button
+              type="button"
+              onClick={() => setNavOpen(false)}
+              aria-label="Close navigation"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-graphite transition-colors hover:bg-white/[0.06] hover:text-foreground"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-      <MoreSheet
-        open={moreOpen}
-        items={withBadges(OVERFLOW)}
-        activeKey={activeKey}
-        onSelect={go}
-        onClose={() => setMoreOpen(false)}
-        title="The rest of your portal"
-        hideFrom="md"
-      />
+          <NavRail
+            items={withBadges(NAV)}
+            activeKey={activeKey}
+            onSelect={go}
+            groupId="client-drawer"
+          />
+
+          <UserFooter user={user} logout={logout} onReplayTour={replayGuide} />
+        </aside>
+      </div>
 
       {showGuide && <PortalTour steps={TOUR} title="Client Portal · Guide" />}
       {/* Held back while the guide is up. A Radix modal makes the rest of the
