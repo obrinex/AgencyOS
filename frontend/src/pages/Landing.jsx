@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useSmoothScroll, useScrolledPast, AnimatedText, AnimatedTextIn, Rise } from "@/components/site/SiteMotion";
-import HeroGlobe from "@/components/site/HeroGlobe";
+import { useSmoothScroll, useScrolledPast, AnimatedTextIn, Rise } from "@/components/site/SiteMotion";
+import HalftoneTrail from "@/components/site/HalftoneTrail";
 import {
   ArrowRight, LayoutDashboard, Users, Receipt, FolderKanban, FileSignature,
   MessageSquare, LifeBuoy, Sparkles, Mail, Gem, Briefcase,
@@ -148,14 +148,20 @@ function Eyebrow({ children }) {
   );
 }
 
+/** Plain text, moved by the surrounding `Reveal`.
+ *
+ *  This used to split into words and animate each one on `whileInView`, nested
+ *  inside a `Reveal` that was doing the same thing. Every section heading came
+ *  out invisible: the words sat at y:110% inside their overflow-hidden spans
+ *  and never played, leaving a hole where the heading should be. Two
+ *  scroll-triggered animations on the same text is one too many — the outer
+ *  reveal already carries it, and a heading that is reliably there beats a
+ *  heading that is sometimes beautiful. */
 function Heading({ children, className = "" }) {
   return (
-    <AnimatedText
-      as="h2"
-      text={children}
-      className={`obx-site-display text-white mt-5 max-w-[20ch] text-[clamp(1.9rem,4.4vw,3.4rem)] ${className}`}
-      stagger={0.06}
-    />
+    <h2 className={`obx-site-display mt-5 text-[clamp(1.9rem,4.4vw,3.4rem)] text-white ${className}`}>
+      {children}
+    </h2>
   );
 }
 
@@ -257,9 +263,10 @@ export default function Landing() {
           The lockup opens the page: it is the first thing in the flow and the
           section is exactly one screen tall, so it is never scrolled to. */}
       <section className="relative flex min-h-[100svh] flex-col items-center justify-center overflow-hidden px-6 text-center">
-        {/* The globe sits behind the lockup and is the only moving thing up
-            here — the hero was otherwise completely still. */}
-        <HeroGlobe className="left-1/2 top-1/2 h-[min(150vw,860px)] w-[min(150vw,860px)] -translate-x-1/2 -translate-y-1/2" />
+        {/* The halftone trail from obrinex.space/join: a dot grid that lights
+            under the cursor and decays behind it. Replaces a dot globe that was
+            not what was being asked for. */}
+        <HalftoneTrail />
 
         <motion.div
           aria-hidden
@@ -399,10 +406,23 @@ export default function Landing() {
       {/* ── Why ──────────────────────────────────────────────────────────── */}
       <Section id="why">
         <div className="grid gap-x-16 gap-y-12 md:grid-cols-[0.9fr_1.1fr]">
-          <div>
+          <div className="md:sticky md:top-28 md:self-start">
             <Reveal><Eyebrow>Why</Eyebrow></Reveal>
             <Reveal delay={0.08}>
               <Heading className="max-w-[14ch]">Not another CRM with your logo on it.</Heading>
+            </Reveal>
+            <Reveal delay={0.16}>
+              <p className="mt-6 max-w-[38ch] text-[15px] leading-[1.8] text-graphite">
+                It was built to run one agency properly, then made general enough to run
+                yours. That is why the finance is real, the permissions are enforced by
+                the API rather than by hiding buttons, and the emails look like they came
+                from you rather than from a template vendor.
+              </p>
+            </Reveal>
+            <Reveal delay={0.24}>
+              <p className="obx-site-mono mt-8 text-[10px] leading-[2] text-carbon">
+                Five things it does differently &rarr;
+              </p>
             </Reveal>
           </div>
 
@@ -423,19 +443,23 @@ export default function Landing() {
 
       {/* ── Close ────────────────────────────────────────────────────────── */}
       <Section>
-        <div className="obx-glass obx-sheen relative overflow-hidden rounded-3xl px-6 py-16 text-center sm:px-12 sm:py-24">
+        <div className="obx-glass obx-sheen relative overflow-hidden rounded-3xl px-6 py-14 text-center sm:px-12 sm:py-16">
         <Reveal>
+          <Eyebrow>Get started</Eyebrow>
+        </Reveal>
+        <Reveal delay={0.06}>
           <Heading className="mx-auto max-w-[22ch] text-center">
             Your clients are already asking for a status update.
           </Heading>
         </Reveal>
         <Reveal delay={0.12}>
-          <p className="mx-auto mt-6 max-w-[38ch] text-[15px] leading-[1.75] text-graphite">
-            Give them somewhere to look instead.
+          <p className="mx-auto mt-5 max-w-[46ch] text-[15px] leading-[1.8] text-graphite">
+            Give them somewhere to look instead — live project progress, invoices they
+            can pay, contracts they can sign, and a direct line to you.
           </p>
         </Reveal>
         <Reveal delay={0.22}>
-          <div className="mt-12 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
             <Link
               to="/login?as=client"
               className="obx-site-mono rounded-full bg-white px-8 py-4 text-[10px] text-background transition-opacity duration-500 hover:opacity-85"
@@ -449,6 +473,11 @@ export default function Landing() {
               Founding Circle sign-in
             </Link>
           </div>
+        </Reveal>
+        <Reveal delay={0.3}>
+          <p className="obx-site-mono mt-8 text-[10px] leading-[2] text-carbon">
+            Already inside? Both doors take you to your own portal.
+          </p>
         </Reveal>
         </div>
       </Section>

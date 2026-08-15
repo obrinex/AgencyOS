@@ -106,6 +106,13 @@ export function useScrolledPast(threshold = 8) {
  *  The whole string stays in the accessible tree via `aria-label`; the split
  *  spans are hidden from it, so a screen reader hears one sentence rather than
  *  nine fragments.
+ *
+ *  **Do not nest this inside `Rise`.** Two scroll-triggered animations on the
+ *  same text is one too many: the section headings came out permanently
+ *  invisible, every word parked at y:110% inside its clip mask, leaving a hole
+ *  where the heading should be. If the text is already inside a reveal, let the
+ *  reveal carry it — or use `AnimatedTextIn`, which fires on mount and cannot
+ *  be waiting on an intersection that never resolves.
  */
 export function AnimatedText({
   text,
