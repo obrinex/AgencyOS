@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Lenis from "lenis";
 import { prefersReducedMotion } from "@/components/motion";
@@ -28,9 +28,26 @@ const EASE = [0.16, 1, 0.3, 1];
  *    platform's own — hijacking it is what makes smooth-scroll libraries feel
  *    broken on mobile.
  */
+//: Anything that needs to know the scroll position subscribes here rather than
+//: to `window`. Lenis drives scrolling itself and native `scroll` events do not
+//: reach window listeners while it is running — measured: zero events fired
+//: across a 600px programmatic scroll. A header that listens to window
+//: therefore never learns it has been scrolled.
+const scrollSubscribers = new Set();
+
+function publishScroll(y) {
+  scrollSubscribers.forEach((fn) => fn(y));
+}
+
 export function useSmoothScroll({ enabled = true } = {}) {
   useEffect(() => {
-    if (!enabled || prefersReducedMotion()) return undefined;
+    if (!enabled || prefersReducedMotion()) {
+      // No Lenis: republish the native events so subscribers still work.
+      const onNative = () => publishScroll(window.scrollY);
+      window.addEventListener("scroll", onNative, { passive: true });
+      onNative();
+      return () => window.removeEventListener("scroll", onNative);
+    }
 
     const lenis = new Lenis({
       // Slow on purpose — the complaint was that the page moved too fast.
@@ -43,6 +60,9 @@ export function useSmoothScroll({ enabled = true } = {}) {
       syncTouch: false,
     });
 
+    lenis.on("scroll", ({ scroll }) => publishScroll(scroll));
+    publishScroll(window.scrollY);
+
     let frame = 0;
     const raf = (time) => {
       lenis.raf(time);
@@ -50,11 +70,30 @@ export function useSmoothScroll({ enabled = true } = {}) {
     };
     frame = requestAnimationFrame(raf);
 
+    // A safety net for any context where rAF never fires: Lenis then produces
+    // no scroll events of its own, so the native ones are all there is.
+    const onNative = () => publishScroll(window.scrollY);
+    window.addEventListener("scroll", onNative, { passive: true });
+
     return () => {
       cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onNative);
       lenis.destroy();
     };
   }, [enabled]);
+}
+
+/** True once the page has moved past `threshold`. Works with Lenis driving the
+ *  scroll or without it. */
+export function useScrolledPast(threshold = 8) {
+  const [past, setPast] = useState(false);
+  useEffect(() => {
+    const onScroll = (y) => setPast(y > threshold);
+    scrollSubscribers.add(onScroll);
+    onScroll(window.scrollY);
+    return () => scrollSubscribers.delete(onScroll);
+  }, [threshold]);
+  return past;
 }
 
 /** Text that assembles itself a word at a time as it comes into view.

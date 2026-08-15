@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useSmoothScroll, AnimatedText, AnimatedTextIn, Rise } from "@/components/site/SiteMotion";
+import { useSmoothScroll, useScrolledPast, AnimatedText, AnimatedTextIn, Rise } from "@/components/site/SiteMotion";
 import HeroGlobe from "@/components/site/HeroGlobe";
 import {
   ArrowRight, LayoutDashboard, Users, Receipt, FolderKanban, FileSignature,
@@ -168,14 +168,8 @@ export default function Landing() {
         : "/dashboard";
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  // Not a window listener: Lenis swallows those while it is driving.
+  const scrolled = useScrolledPast(8);
 
   // Inertial scrolling for this page only. Torn down on unmount, so the CRM
   // routes behind it keep their ordinary instant scroll.
@@ -199,7 +193,13 @@ export default function Landing() {
       {/* ── Nav ──────────────────────────────────────────────────────────── */}
       <header
         className={`fixed inset-x-0 top-0 z-50 transition-colors duration-500 ${
-          scrolled ? "border-b border-white/[0.09] bg-black/70 backdrop-blur-xl" : ""
+          scrolled
+            // A black fill reads *darker* than the page it sits on: the app's
+            // ground carries a corner light, so the top of the screen is not
+            // black to begin with. A faint white tint plus blur takes on
+            // whatever is behind it, which is the same glass every card uses.
+            ? "border-b border-white/[0.07] bg-white/[0.025] backdrop-blur-xl"
+            : ""
         }`}
       >
         <div className={`${SHELL} flex h-[68px] items-center gap-4`}>
@@ -239,7 +239,7 @@ export default function Landing() {
         </div>
 
         {menuOpen && (
-          <nav className="border-t border-white/[0.09] bg-black/95 px-6 py-4 backdrop-blur-xl lg:hidden">
+          <nav className="border-t border-white/[0.07] bg-white/[0.04] px-6 py-4 backdrop-blur-2xl lg:hidden">
             {NAV.map((n) => (
               <button
                 key={n.id}
@@ -311,10 +311,11 @@ export default function Landing() {
           </button>
         </motion.div>
 
-        <div
-          aria-hidden
-          className="pointer-events-none absolute left-1/2 top-[calc(100%-7rem)] h-[26rem] w-[150vw] -translate-x-1/2 rounded-[100%]" style={{ background: "radial-gradient(closest-side, rgba(0,0,0,0.9) 70%, rgba(0,224,255,0.20) 88%, transparent 100%)" }}
-        />
+        {/* The horizon arc is gone. A 26rem x 150vw ellipse across the foot
+            of the hero read as a giant dark dome cutting the section in half,
+            with the buttons sitting on its edge. The app's ground already
+            supplies the light down here. */}
+
       </section>
 
       {/* ── What it does ─────────────────────────────────────────────────── */}
