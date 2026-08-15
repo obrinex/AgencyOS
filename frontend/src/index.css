@@ -279,6 +279,201 @@ h1, h2, h3 {
     .stagger-in > *:nth-child(4)  { animation-delay: 60ms; }
     .stagger-in > *:nth-child(5)  { animation-delay: 80ms; }
     .stagger-in > *:nth-child(n+6) { animation-delay: 100ms; }
+
+    /* ══ The members' surfaces ═════════════════════════════════════════════
+       Everything below exists for the Founding Circle portal and the client
+       portal. The CRM is a tool and stays flat on purpose; those two are the
+       only places a person is a *member* rather than an operator, so they get
+       depth, light and foil that a table of invoices would be worse for.
+
+       All of it is composited — gradients, blur, transform, opacity — and none
+       of it animates layout. The global prefers-reduced-motion rule above
+       switches every animation here off without leaving a hole, because each
+       one has a still final state. */
+
+    /* A panel with light on it. Three layers: the tint, a lit top edge, and a
+       corner wash that falls off — which is what stops six of these in a
+       column reading as six identical grey boxes. */
+    .obx-glass {
+        position: relative;
+        isolation: isolate;
+        background:
+            radial-gradient(120% 100% at 0% 0%, rgba(255, 255, 255, 0.055), transparent 55%),
+            rgba(255, 255, 255, 0.028);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        box-shadow:
+            inset 0 1px 0 0 rgba(255, 255, 255, 0.07),
+            0 1px 2px rgba(0, 0, 0, 0.5),
+            0 12px 40px -20px rgba(0, 0, 0, 0.9);
+        transition: border-color 200ms ease, background-color 200ms ease,
+                    transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
+                    box-shadow 300ms ease;
+    }
+
+    /* Reserved for things you can act on, so lift always means "clickable". */
+    .obx-lift:hover {
+        transform: translate3d(0, -2px, 0);
+        border-color: rgba(0, 224, 255, 0.32);
+        box-shadow:
+            inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
+            0 1px 2px rgba(0, 0, 0, 0.5),
+            0 18px 50px -24px rgba(0, 224, 255, 0.35);
+    }
+
+    /* A light that travels across the surface once, on hover. The sweep is a
+       pseudo-element rather than a background-position animation so it can be
+       clipped to the card's radius without repainting the card itself. */
+    .obx-sheen { overflow: hidden; }
+    .obx-sheen::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background: linear-gradient(
+            100deg,
+            transparent 35%,
+            rgba(255, 255, 255, 0.07) 48%,
+            rgba(0, 224, 255, 0.06) 52%,
+            transparent 65%
+        );
+        transform: translateX(-120%);
+        transition: transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .obx-sheen:hover::after { transform: translateX(120%); }
+
+    /* Holographic foil, for the one object in the product that is a credential
+       rather than a screen. Two counter-rotating conic gradients: a single one
+       reads as a spinning wheel, two beating against each other read as light
+       moving across a surface that is not moving. */
+    .obx-holo::before,
+    .obx-holo::after {
+        content: "";
+        position: absolute;
+        inset: -40%;
+        z-index: 0;
+        pointer-events: none;
+        mix-blend-mode: screen;
+    }
+    .obx-holo::before {
+        background: conic-gradient(
+            from 0deg,
+            rgba(0, 224, 255, 0.16), rgba(120, 90, 255, 0.14),
+            rgba(255, 90, 190, 0.10), rgba(0, 224, 255, 0.16)
+        );
+        filter: blur(46px);
+        animation: obx-spin 26s linear infinite;
+    }
+    .obx-holo::after {
+        background: conic-gradient(
+            from 180deg,
+            transparent, rgba(0, 224, 255, 0.13), transparent 46%,
+            rgba(160, 120, 255, 0.11), transparent
+        );
+        filter: blur(64px);
+        animation: obx-spin 41s linear infinite reverse;
+    }
+
+    @keyframes obx-spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Drifting light behind a header. Deliberately slow and very low contrast:
+       it should be noticed only if you look for it. */
+    .obx-aurora {
+        position: relative;
+        overflow: hidden;
+    }
+    .obx-aurora::before {
+        content: "";
+        position: absolute;
+        inset: -60% -20%;
+        z-index: 0;
+        pointer-events: none;
+        background:
+            radial-gradient(40% 50% at 20% 30%, rgba(0, 224, 255, 0.13), transparent 70%),
+            radial-gradient(35% 45% at 80% 20%, rgba(130, 100, 255, 0.10), transparent 70%);
+        filter: blur(40px);
+        animation: obx-drift 22s ease-in-out infinite alternate;
+    }
+
+    @keyframes obx-drift {
+        from { transform: translate3d(-4%, -2%, 0) scale(1); }
+        to   { transform: translate3d(4%, 3%, 0) scale(1.12); }
+    }
+
+    /* An unread marker that breathes. The ring is a second element so the dot
+       itself stays a crisp 6px — scaling the dot would make the number beside
+       it look like it is wobbling. */
+    .obx-ping {
+        position: relative;
+    }
+    .obx-ping::after {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: 9999px;
+        border: 1px solid currentColor;
+        opacity: 0;
+        animation: obx-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+
+    @keyframes obx-ping {
+        0%   { transform: scale(0.7); opacity: 0.7; }
+        70%  { transform: scale(1.9); opacity: 0; }
+        100% { transform: scale(1.9); opacity: 0; }
+    }
+
+    /* A figure that counts for something — member number, tenure, seat. Wide
+       tracking and tabular figures so it reads as stamped rather than typed. */
+    .obx-figure {
+        font-variant-numeric: tabular-nums lining-nums;
+        letter-spacing: 0.14em;
+    }
+
+    /* Text filled with the accent gradient. Used once per screen at most. */
+    .obx-gradient-text {
+        background: linear-gradient(100deg, #fff 10%, hsl(190 100% 70%) 55%, #fff 92%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    /* A message arriving should not blink into place. */
+    .obx-message-in {
+        animation: obx-message 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    @keyframes obx-message {
+        from { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.985); }
+        to   { opacity: 1; transform: none; }
+    }
+
+    /* Three dots, for "the other side is typing" and for a pending send. */
+    .obx-typing span {
+        display: inline-block;
+        width: 4px;
+        height: 4px;
+        margin-right: 3px;
+        border-radius: 9999px;
+        background: currentColor;
+        animation: obx-typing 1.2s ease-in-out infinite;
+    }
+    .obx-typing span:nth-child(2) { animation-delay: 0.15s; }
+    .obx-typing span:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes obx-typing {
+        0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+        30%           { opacity: 1;    transform: translateY(-3px); }
+    }
+
+    /* Safe-area padding for the phone tab bar, so the last row of a list is not
+       hidden behind the home indicator on an iPhone. */
+    .pb-safe {
+        padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+    }
 }
 
 @layer base {

@@ -113,6 +113,9 @@ async def create_indexes():
     from routers.founding import create_founding_indexes
     await create_founding_indexes()
 
+    from routers.me import create_me_indexes
+    await create_me_indexes()
+
 
 async def next_counter(name: str) -> int:
     doc = await db.counters.find_one_and_update(

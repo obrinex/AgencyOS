@@ -1,18 +1,28 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  MessageSquare, Sparkles, Send, Loader2, LogOut, FolderKanban, Users,
-  UserPlus, BookOpen, HelpCircle, IdCard, Plus, Trash2, Copy, Check,
+  MessageSquare, Sparkles, LogOut, FolderKanban, Users, UserPlus,
+  BookOpen, HelpCircle, IdCard, MoreHorizontal, ShieldCheck, Compass,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
-import api, { formatApiError } from "@/lib/api";
+import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
-import { GUIDELINES, FAQ } from "./foundingContent";
+import { usePortal } from "@/contexts/PortalContext";
+import NotificationBell from "@/components/NotificationBell";
+import { useUnreadCounts } from "@/lib/useNotifications";
+import { NavRail, TabBar, MoreSheet, useNavShortcuts } from "@/components/portal/PortalNav";
+import OnboardingGate from "@/components/portal/OnboardingGate";
+import PortalTour from "@/components/portal/PortalTour";
+import PortalAssistant from "@/components/portal/PortalAssistant";
+import MemberGreeting from "@/components/founding/MemberGreeting";
+import MembershipPassport from "@/components/founding/MembershipPassport";
+import CommunityRoom from "@/components/founding/CommunityRoom";
+import MemberDirectory from "@/components/founding/MemberDirectory";
+import CircleProjects from "@/components/founding/CircleProjects";
+import ReferralDesk from "@/components/founding/ReferralDesk";
+import MemberProfile from "@/components/founding/MemberProfile";
+import { Guidelines, Help } from "@/components/founding/CircleReading";
 
 /** The Founding Circle's own portal.
  *
@@ -20,627 +30,353 @@ import { GUIDELINES, FAQ } from "./foundingContent";
  *  client routes are unreachable from here and these are unreachable from
  *  there — the separation is enforced by the API, not by hiding links.
  *
- *  Seven sections rather than the original two. The room and the assistant were
- *  the whole portal, which made membership feel like a group chat with a bot
- *  attached; the directory, the projects page and referrals are the parts that
- *  make it a network rather than a channel.
+ *  ## Three gates, in order
+ *
+ *  The interview, then the guide, then the portal. A member who has answered
+ *  nothing sees only the interview; one who has answered everything but never
+ *  been here sees the guide over the portal; everyone else sees the portal.
+ *  Rendering them in this order is what keeps a half-set-up account from
+ *  hitting a tour that references sections it is describing for the first time.
+ *
+ *  ## Navigation
+ *
+ *  Nine sections do not fit one control, so there are three shapes and the
+ *  handover points are chosen by what actually fits:
+ *
+ *  - **≥ md** — the rail, grouped into You / The circle / Help, expanded or
+ *    collapsed to icons. Collapsing is what earns a tablet a rail at all; it
+ *    used to fall below `lg` to the phone's tab bar and put five of nine
+ *    sections behind More on a screen with room for all nine.
+ *  - **< md** — the four most-opened sections as a tab bar, the rest in a sheet.
+ *  - **Keys 1–9** jump straight to a section, which is what the numerals down
+ *    the left of the rail are for. Printing an index and giving it no meaning
+ *    is decoration.
+ *
+ *  ## The tab lives in the URL
+ *
+ *  `?tab=chat`, so a notification can link to the room rather than to the front
+ *  door, and so a reload lands where the member was.
+ */
+
+/** Nine sections, in three groups.
+ *
+ *  Flat, they were a pile you re-read top to bottom every time you wanted one.
+ *  Grouped, the rail answers "is this about me, about the circle, or about
+ *  getting help" before you read a single label — and the order within each
+ *  group is by how often it is opened, not by how important it sounds.
+ *
+ *  The group a section belongs to is also what decides whether it earns a place
+ *  on the phone's tab bar: the four `primary` ones are one per group plus the
+ *  room, which is the only section people open more than once a day.
  */
 const TABS = [
-  { key: "chat", label: "Community", icon: MessageSquare },
-  { key: "projects", label: "Projects", icon: FolderKanban },
-  { key: "directory", label: "Members", icon: Users },
-  { key: "refer", label: "Refer", icon: UserPlus },
-  { key: "profile", label: "Profile", icon: IdCard },
-  { key: "guidelines", label: "Guidelines", icon: BookOpen },
-  { key: "help", label: "Help", icon: HelpCircle },
-  { key: "assistant", label: "Assistant", icon: Sparkles },
+  { key: "membership", label: "Membership", short: "Card", icon: ShieldCheck, group: "You", primary: true },
+  { key: "profile", label: "Profile", icon: IdCard, group: "You" },
+
+  { key: "chat", label: "Community", short: "Room", icon: MessageSquare, group: "The circle", primary: true, badgeKey: "community" },
+  { key: "directory", label: "Members", short: "Circle", icon: Users, group: "The circle", primary: true },
+  { key: "projects", label: "Projects", icon: FolderKanban, group: "The circle" },
+  { key: "refer", label: "Refer", icon: UserPlus, group: "The circle" },
+
+  { key: "assistant", label: "Assistant", short: "Ask", icon: Sparkles, group: "Help", primary: true },
+  { key: "guidelines", label: "Guidelines", icon: BookOpen, group: "Help" },
+  { key: "help", label: "Help", icon: HelpCircle, group: "Help" },
+];
+
+const KEYS = TABS.map((t) => t.key);
+const PRIMARY = TABS.filter((t) => t.primary);
+const OVERFLOW = TABS.filter((t) => !t.primary);
+
+//: Where the collapsed-rail preference is kept.
+const RAIL_KEY = "obx-founding-rail";
+
+const TOUR = [
+  {
+    icon: ShieldCheck,
+    title: "This is your membership",
+    body: "Your passport carries your member number, the seat you took and the day you were admitted. Stamps fill in as you use the circle — you can save the card as an image any time.",
+  },
+  {
+    icon: MessageSquare,
+    title: "One room, everyone in it",
+    body: "There are no channels and no threads to keep up with. Everyone in the circle is in Community, including us — we post as Obrinex so you always know who you're hearing from.",
+  },
+  {
+    icon: Sparkles,
+    title: "Your assistant knows you",
+    body: "It has the answers you just gave and your live membership — stamps, invitations, where you are in the intake. Ask it about the circle, about Obrinex, or about the thing you're actually stuck on.",
+  },
+  {
+    icon: Users,
+    title: "The circle is private",
+    body: "Members and Projects show you who's here and what they're building. Contact details are opt-in per person — set yours under Profile, and nothing is shared until you switch it on.",
+  },
+  {
+    icon: UserPlus,
+    title: "You can bring someone",
+    body: "Refer mints a link you send yourself. They answer the same eleven questions and are scored the same way — a referral is read sooner, never accepted sooner. We never email them; the introduction is yours.",
+  },
 ];
 
 export default function FoundingPortal() {
   const { user, logout } = useAuth();
+  const { ready, blocked, showGuide, replayGuide } = usePortal();
   const [me, setMe] = useState(null);
-  const [tab, setTab] = useState("chat");
+  const [params, setParams] = useSearchParams();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // Remembered, because a member who narrowed the rail meant it — re-expanding
+  // on every visit is the setting quietly not working.
+  const [railCollapsed, setRailCollapsed] = useState(() => {
+    try { return window.localStorage.getItem(RAIL_KEY) === "1"; } catch { return false; }
+  });
+  const toggleRail = useCallback(() => {
+    setRailCollapsed((was) => {
+      const next = !was;
+      try { window.localStorage.setItem(RAIL_KEY, next ? "1" : "0"); } catch { /* private mode */ }
+      return next;
+    });
+  }, []);
+
+  const requested = params.get("tab");
+  const tab = KEYS.includes(requested) ? requested : "membership";
+
+  const { counts, reload: reloadCounts, clear } = useUnreadCounts("/founding/unread", {
+    enabled: ready && !blocked,
+  });
+
+  const setTab = useCallback(
+    (key) => {
+      setParams(key === "membership" ? {} : { tab: key }, { replace: true });
+      setMoreOpen(false);
+    },
+    [setParams]
+  );
 
   useEffect(() => {
+    if (blocked) return;
     api.get("/founding/me").then(({ data }) => setMe(data)).catch(() => setMe(false));
-  }, []);
-
-  return (
-    <div className="min-h-screen text-foreground">
-      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-black/50 px-6 py-4 backdrop-blur-xl">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="font-display text-lg font-bold tracking-tight">Founding Circle</h1>
-            <p className="text-xs text-graphite">
-              {me ? `${me.members} member${me.members === 1 ? "" : "s"}` : " "}
-            </p>
-          </div>
-          <div className="ml-auto flex items-center gap-3">
-            <span className="text-sm text-graphite">{user?.name}</span>
-            <Button size="icon" variant="ghost" onClick={logout} data-testid="founding-logout">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-        {/* Scrolls on a phone rather than wrapping into two ragged rows. */}
-        <nav className="mt-3 -mb-1 flex items-center gap-1 overflow-x-auto pb-1">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              data-testid={`founding-tab-${t.key}`}
-              className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                tab === t.key
-                  ? "bg-white/[0.09] text-foreground"
-                  : "text-ash hover:bg-white/[0.05] hover:text-foreground"
-              }`}
-            >
-              <t.icon className="h-3.5 w-3.5" /> {t.label}
-            </button>
-          ))}
-        </nav>
-      </header>
-
-      <main className="p-6 max-w-3xl mx-auto">
-        {tab === "chat" && <CommunityChat />}
-        {tab === "projects" && <Projects />}
-        {tab === "directory" && <Directory />}
-        {tab === "refer" && <Referrals />}
-        {tab === "profile" && <Profile />}
-        {tab === "guidelines" && <Guidelines />}
-        {tab === "help" && <Help />}
-        {tab === "assistant" && <Assistant />}
-      </main>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------- community */
-
-function CommunityChat() {
-  const [messages, setMessages] = useState(null);
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const endRef = useRef(null);
-
-  const load = async () => {
-    const { data } = await api.get("/founding/chat");
-    setMessages(data);
-  };
-
-  useEffect(() => { load(); }, []);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
-  const send = async () => {
-    if (!text.trim()) return;
-    setSending(true);
-    try {
-      await api.post("/founding/chat", { body: text });
-      setText("");
-      await load();
-    } catch (err) {
-      toast.error(formatApiError(err.response?.data?.detail));
-    } finally { setSending(false); }
-  };
-
-  if (!messages) return <Skeleton className="h-96 bg-surface-1" />;
-
-  return (
-    <Card className="bg-surface-1 border-white/10 flex flex-col h-[70vh]" data-testid="founding-chat">
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
-          <p className="text-sm text-graphite text-center py-12">
-            Nothing here yet. One room — say something.
-          </p>
-        )}
-        {messages.map((m) => (
-          <div key={m.id} className="rounded-lg bg-surface-2 border border-white/10 p-3">
-            <p className="text-[11px] text-graphite">
-              {m.author_name}
-              {m.author_company ? ` · ${m.author_company}` : ""}
-            </p>
-            <p className="mt-1 text-sm whitespace-pre-line break-words">{m.body}</p>
-          </div>
-        ))}
-        <div ref={endRef} />
-      </div>
-      <div className="border-t border-white/10 p-3 flex items-center gap-2">
-        <Input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder="Message the circle…"
-          className="bg-surface-2 border-white/10"
-          data-testid="founding-chat-input"
-        />
-        <Button onClick={send} disabled={sending} data-testid="founding-chat-send">
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
-/* --------------------------------------------------------------- projects */
-
-function Projects() {
-  const [rows, setRows] = useState(null);
+  }, [blocked]);
 
   useEffect(() => {
-    api.get("/founding/projects").then(({ data }) => setRows(data)).catch(() => setRows([]));
-  }, []);
+    if (!moreOpen) return;
+    const onKey = (e) => e.key === "Escape" && setMoreOpen(false);
+    window.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [moreOpen]);
 
-  if (!rows) return <Skeleton className="h-64 bg-surface-1" />;
+  const onRoomRead = useCallback(() => clear("community"), [clear]);
+  const withBadges = (list) =>
+    list.map((t) => ({ ...t, badge: t.badgeKey ? counts[t.badgeKey] || 0 : 0 }));
 
-  if (rows.length === 0) {
-    return (
-      <Card className="p-8 bg-surface-1 border-white/10 text-center" data-testid="founding-projects">
-        <FolderKanban className="h-5 w-5 text-graphite mx-auto" />
-        <p className="mt-2 text-sm text-graphite">Nothing listed yet.</p>
-        <p className="mt-1 text-xs text-carbon">
-          Add what you&apos;re building under Profile and it shows up here.
-        </p>
-      </Card>
-    );
-  }
+  // Number keys jump between sections, matching the numerals printed in the
+  // rail. Off while either overlay is up — the gate and the tour own the
+  // keyboard, and a member typing an answer must not be thrown to section 4.
+  useNavShortcuts(TABS, setTab, { enabled: !blocked && !showGuide && !moreOpen });
 
-  return (
-    <div className="space-y-3" data-testid="founding-projects">
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-graphite">
-        What the circle is building
-      </p>
-      {rows.map((p, i) => (
-        <Card key={`${p.owner_id}-${i}`} className="p-4 bg-surface-1 border-white/10">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-medium">{p.title}</p>
-              {p.summary && <p className="mt-1 text-sm text-ash">{p.summary}</p>}
-            </div>
-            {p.status && (
-              <span className="shrink-0 rounded-full border border-white/10 px-2 py-0.5 font-mono text-[10px] uppercase text-graphite">
-                {p.status}
-              </span>
-            )}
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-[11px] text-graphite">
-            <span>{p.owner}</span>
-            {p.owner_company && <span className="text-carbon">· {p.owner_company}</span>}
-            {p.link && (
-              <a href={p.link} target="_blank" rel="noopener noreferrer"
-                 className="ml-auto text-accent hover:underline">
-                Open
-              </a>
-            )}
-          </div>
-        </Card>
-      ))}
-    </div>
-  );
-}
+  const active = TABS.find((t) => t.key === tab);
 
-/* -------------------------------------------------------------- directory */
-
-function Directory() {
-  const [people, setPeople] = useState(null);
-
-  useEffect(() => {
-    api.get("/founding/directory").then(({ data }) => setPeople(data)).catch(() => setPeople([]));
-  }, []);
-
-  if (!people) return <Skeleton className="h-64 bg-surface-1" />;
+  // Nothing renders until we know whether the interview is done. A flash of the
+  // portal before the gate drops would show a member the room they have not
+  // been let into yet.
+  if (!ready) return <div className="min-h-[100dvh] bg-black" />;
+  if (blocked) return <OnboardingGate />;
 
   return (
-    <div className="space-y-3" data-testid="founding-directory">
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-graphite">
-        The circle · {people.length}
-      </p>
-      {people.map((p) => {
-        const links = [
-          ["LinkedIn", p.linkedin], ["Instagram", p.instagram],
-          ["X", p.twitter], ["Email", p.email && `mailto:${p.email}`],
-          ["Phone", p.phone && `tel:${p.phone}`],
-        ].filter(([, v]) => v);
-        return (
-          <Card key={p.id} className="p-4 bg-surface-1 border-white/10">
-            <div className="flex items-baseline gap-2">
-              <p className="font-medium">{p.name}</p>
-              {p.company && <p className="text-sm text-graphite">· {p.company}</p>}
-            </div>
-            {p.headline && <p className="mt-1 text-sm text-ash">{p.headline}</p>}
-            {p.bio && <p className="mt-2 text-sm text-graphite whitespace-pre-line">{p.bio}</p>}
+    <div className="relative flex min-h-[100dvh] text-foreground" data-testid="founding-portal">
+      {/* The rail now starts at `md` in its collapsed form rather than vanishing
+          below `lg`. A tablet had been getting the phone's tab bar with five of
+          nine sections behind More, on a screen with room for all nine. */}
+      {/* The width changes instantly, on purpose — twice burned trying to
+          animate it.
 
-            {p.projects?.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {p.projects.map((pr, i) => (
-                  <span key={i} className="rounded-full bg-surface-2 border border-white/10 px-2 py-0.5 text-[11px]">
-                    {pr.title}
-                  </span>
-                ))}
-              </div>
-            )}
+          As a framer `animate` value it wrote `width: 248px` on mount and never
+          updated again. As a CSS `transition-[width]` it froze at the start
+          value: inline style read `width: 68px` while `offsetWidth` stayed 248
+          indefinitely, and setting `transition-property: none` snapped it to 68
+          at once. Verified in the browser both times.
 
-            {links.length > 0 ? (
-              <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
-                {links.map(([label, href]) => (
-                  <a key={label} href={href} target="_blank" rel="noopener noreferrer"
-                     className="text-accent hover:underline">{label}</a>
-                ))}
-              </div>
-            ) : (
-              // Said plainly rather than left blank, so nobody wonders whether
-              // the page is broken.
-              <p className="mt-3 text-[11px] text-carbon">
-                Shares no contact details. Reach them in the community room.
-              </p>
-            )}
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------- referrals */
-
-function Referrals() {
-  const [rows, setRows] = useState(null);
-  const [label, setLabel] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(null);
-
-  const load = async () => {
-    const { data } = await api.get("/founding/referrals");
-    setRows(data);
-  };
-  useEffect(() => { load(); }, []);
-
-  // The site the link points at, not this one. A referral is something you send
-  // to someone outside, so it has to be the public application URL.
-  const APPLY_ORIGIN = "https://obrinex.space";
-  const linkFor = (code) => `${APPLY_ORIGIN}/join?ref=${code}`;
-
-  const create = async () => {
-    setBusy(true);
-    try {
-      const { data } = await api.post("/founding/referrals", { label, note });
-      await navigator.clipboard?.writeText(linkFor(data.code)).catch(() => {});
-      toast.success("Invitation ready — link copied.");
-      setLabel(""); setNote("");
-      await load();
-    } catch (err) {
-      toast.error(formatApiError(err.response?.data?.detail));
-    } finally { setBusy(false); }
-  };
-
-  const revoke = async (id) => {
-    try {
-      await api.delete(`/founding/referrals/${id}`);
-      await load();
-    } catch (err) {
-      toast.error(formatApiError(err.response?.data?.detail));
-    }
-  };
-
-  const copy = async (code) => {
-    await navigator.clipboard?.writeText(linkFor(code)).catch(() => {});
-    setCopied(code);
-    setTimeout(() => setCopied(null), 1500);
-  };
-
-  if (!rows) return <Skeleton className="h-64 bg-surface-1" />;
-
-  return (
-    <div className="space-y-5" data-testid="founding-referrals">
-      <Card className="p-4 bg-surface-1 border-white/10 space-y-3">
-        <div>
-          <p className="font-medium">Invite someone</p>
-          <p className="mt-1 text-sm text-graphite">
-            You get a link to send them yourself. They answer the same eleven
-            questions and are scored the same way — a referral is read sooner,
-            not accepted sooner.
-          </p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div>
-            <Label className="text-xs text-graphite">Who is it for?</Label>
-            <Input value={label} onChange={(e) => setLabel(e.target.value)}
-                   placeholder="For your list only"
-                   className="mt-1 bg-surface-2 border-white/10"
-                   data-testid="founding-referral-label" />
+          So the rail resizes in one frame and the *contents* carry the motion —
+          the label block fades and slides out under AnimatePresence, which is
+          what the eye actually follows. A snap that always works beats a
+          smooth animation that never runs. */}
+      <aside
+        style={{ width: railCollapsed ? 68 : 248 }}
+        className="sticky top-0 hidden h-[100dvh] shrink-0 flex-col border-r border-white/[0.07] md:flex"
+      >
+        <div
+          className={`obx-aurora relative flex h-16 items-center border-b border-white/[0.07] ${
+            railCollapsed ? "justify-center px-2" : "gap-2.5 px-4"
+          }`}
+        >
+          <div className="obx-holo obx-glass relative z-10 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl">
+            <span className="relative z-10 font-display text-sm font-bold">O</span>
           </div>
-          <div>
-            <Label className="text-xs text-graphite">Why them?</Label>
-            <Input value={note} onChange={(e) => setNote(e.target.value)}
-                   placeholder="We read this with their application"
-                   className="mt-1 bg-surface-2 border-white/10"
-                   data-testid="founding-referral-note" />
-          </div>
-        </div>
-        <Button size="sm" onClick={create} disabled={busy}
-                className="gap-1.5" data-testid="founding-referral-create">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-          Create invitation
-        </Button>
-        <p className="text-xs text-carbon">
-          We never email the person — the introduction is yours to make.
-        </p>
-      </Card>
-
-      {rows.length > 0 && (
-        <div className="space-y-2">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-graphite">
-            Your invitations
-          </p>
-          {rows.map((r) => (
-            <Card key={r.id} className="p-3 bg-surface-1 border-white/10 flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm truncate">{r.label || "Unlabelled invitation"}</p>
-                <p className="mt-0.5 text-[11px] text-graphite">
-                  {r.used_at
-                    ? `Used${r.applicant_name ? ` by ${r.applicant_name}` : ""}${r.status ? ` · ${r.status}` : ""}`
-                    : "Not used yet"}
+          <AnimatePresence initial={false}>
+            {!railCollapsed && (
+              <motion.div
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.16 }}
+                className="relative z-10 min-w-0 leading-none"
+              >
+                <p className="truncate font-display text-sm font-bold tracking-tight">
+                  Founding Circle
                 </p>
-              </div>
-              {!r.used_at && (
-                <>
-                  <Button size="icon" variant="ghost" onClick={() => copy(r.code)}
-                          title="Copy link" className="text-carbon hover:text-foreground">
-                    {copied === r.code ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                  <Button size="icon" variant="ghost" onClick={() => revoke(r.id)}
-                          title="Withdraw" className="text-carbon hover:text-danger">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </>
-              )}
-            </Card>
-          ))}
+                <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.22em] text-graphite">
+                  Obrinex
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
-      )}
-    </div>
-  );
-}
 
-/* ---------------------------------------------------------------- profile */
-
-const SHARE_FIELDS = [
-  { key: "email", label: "Email" },
-  { key: "phone", label: "Phone" },
-  { key: "linkedin", label: "LinkedIn" },
-  { key: "instagram", label: "Instagram" },
-  { key: "twitter", label: "X / Twitter" },
-];
-
-function Profile() {
-  const [p, setP] = useState(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api.get("/founding/profile").then(({ data }) => setP(data)).catch(() => setP(false));
-  }, []);
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      const { data } = await api.put("/founding/profile", {
-        headline: p.headline, bio: p.bio, email: p.email, phone: p.phone,
-        linkedin: p.linkedin, instagram: p.instagram, twitter: p.twitter,
-        projects: (p.projects || []).filter((x) => x.title?.trim()),
-        visibility: p.visibility, listed: p.listed,
-      });
-      setP(data);
-      toast.success("Saved.");
-    } catch (err) {
-      toast.error(formatApiError(err.response?.data?.detail));
-    } finally { setBusy(false); }
-  };
-
-  if (p === null) return <Skeleton className="h-96 bg-surface-1" />;
-  if (p === false) return <Card className="p-6 bg-surface-1 border-white/10 text-sm text-graphite">Profile unavailable.</Card>;
-
-  const set = (patch) => setP({ ...p, ...patch });
-  const setProject = (i, patch) => {
-    const projects = [...(p.projects || [])];
-    projects[i] = { ...projects[i], ...patch };
-    set({ projects });
-  };
-
-  return (
-    <div className="space-y-5" data-testid="founding-profile">
-      <Card className="p-4 bg-surface-1 border-white/10 space-y-3">
-        <p className="font-medium">You</p>
-        <div>
-          <Label className="text-xs text-graphite">One line about what you do</Label>
-          <Input value={p.headline || ""} onChange={(e) => set({ headline: e.target.value })}
-                 className="mt-1 bg-surface-2 border-white/10" data-testid="founding-profile-headline" />
-        </div>
-        <div>
-          <Label className="text-xs text-graphite">Anything else worth knowing</Label>
-          <Textarea rows={3} value={p.bio || ""} onChange={(e) => set({ bio: e.target.value })}
-                    className="mt-1 bg-surface-2 border-white/10" />
-        </div>
-      </Card>
-
-      <Card className="p-4 bg-surface-1 border-white/10 space-y-3">
-        <div className="flex items-baseline justify-between">
-          <p className="font-medium">What you&apos;re building</p>
-          <Button size="sm" variant="outline" className="border-white/10 gap-1.5"
-                  onClick={() => set({ projects: [...(p.projects || []), { title: "", summary: "", status: "", link: "" }] })}
-                  data-testid="founding-profile-add-project">
-            <Plus className="h-3.5 w-3.5" /> Add
-          </Button>
-        </div>
-        {(p.projects || []).length === 0 && (
-          <p className="text-sm text-graphite">
-            Nothing yet. What you add here is what the circle sees on Projects.
-          </p>
-        )}
-        {(p.projects || []).map((pr, i) => (
-          <div key={i} className="rounded-lg bg-surface-2 border border-white/10 p-3 space-y-2">
-            <div className="flex gap-2">
-              <Input value={pr.title || ""} placeholder="Project"
-                     onChange={(e) => setProject(i, { title: e.target.value })}
-                     className="bg-surface-1 border-white/10" />
-              <Input value={pr.status || ""} placeholder="Status"
-                     onChange={(e) => setProject(i, { status: e.target.value })}
-                     className="w-32 bg-surface-1 border-white/10" />
-              <Button size="icon" variant="ghost" className="text-carbon hover:text-danger shrink-0"
-                      onClick={() => set({ projects: p.projects.filter((_, n) => n !== i) })}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <Input value={pr.summary || ""} placeholder="One line"
-                   onChange={(e) => setProject(i, { summary: e.target.value })}
-                   className="bg-surface-1 border-white/10" />
-            <Input value={pr.link || ""} placeholder="Link (optional)"
-                   onChange={(e) => setProject(i, { link: e.target.value })}
-                   className="bg-surface-1 border-white/10" />
-          </div>
-        ))}
-      </Card>
-
-      <Card className="p-4 bg-surface-1 border-white/10 space-y-3">
-        <div>
-          <p className="font-medium">Contact details</p>
-          <p className="mt-1 text-sm text-graphite">
-            Each of these is hidden from other members until you switch it on.
-            Your name, company and projects are always visible.
-          </p>
-        </div>
-        {SHARE_FIELDS.map((f) => (
-          <div key={f.key} className="flex items-center gap-3">
-            <Label className="w-24 shrink-0 text-xs text-graphite">{f.label}</Label>
-            <Input value={p[f.key] || ""} onChange={(e) => set({ [f.key]: e.target.value })}
-                   className="bg-surface-2 border-white/10" />
-            <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-graphite">
-              <input
-                type="checkbox"
-                checked={!!p.visibility?.[f.key]}
-                onChange={(e) => set({ visibility: { ...p.visibility, [f.key]: e.target.checked } })}
-                data-testid={`founding-share-${f.key}`}
-              />
-              Share
-            </label>
-          </div>
-        ))}
-        <label className="flex items-center gap-2 pt-1 text-sm">
-          <input type="checkbox" checked={p.listed !== false}
-                 onChange={(e) => set({ listed: e.target.checked })}
-                 data-testid="founding-listed" />
-          List me in the directory
-        </label>
-      </Card>
-
-      <Button onClick={save} disabled={busy} data-testid="founding-profile-save">
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
-      </Button>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------- guidelines & help */
-
-function Guidelines() {
-  return (
-    <div className="space-y-3" data-testid="founding-guidelines">
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-graphite">
-        How this room works
-      </p>
-      {GUIDELINES.map((g) => (
-        <Card key={g.title} className="p-4 bg-surface-1 border-white/10">
-          <p className="font-medium">{g.title}</p>
-          <p className="mt-1.5 text-sm text-ash leading-relaxed">{g.body}</p>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function Help() {
-  return (
-    <div className="space-y-3" data-testid="founding-help">
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-graphite">
-        Questions people actually ask
-      </p>
-      {FAQ.map((f) => (
-        <details key={f.q} className="group rounded-lg border border-white/10 bg-surface-1 p-4">
-          <summary className="cursor-pointer list-none text-sm font-medium marker:hidden">
-            {f.q}
-          </summary>
-          <p className="mt-2 text-sm text-ash leading-relaxed">{f.a}</p>
-        </details>
-      ))}
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------- assistant */
-
-function Assistant() {
-  const [thread, setThread] = useState(null);
-  const [text, setText] = useState("");
-  const [asking, setAsking] = useState(false);
-  const endRef = useRef(null);
-
-  const load = async () => {
-    const { data } = await api.get("/founding/assistant");
-    setThread(data);
-  };
-
-  useEffect(() => { load(); }, []);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [thread]);
-
-  const ask = async () => {
-    if (!text.trim()) return;
-    setAsking(true);
-    try {
-      await api.post("/founding/assistant", { message: text });
-      setText("");
-      await load();
-    } catch (err) {
-      toast.error(formatApiError(err.response?.data?.detail));
-    } finally { setAsking(false); }
-  };
-
-  if (!thread) return <Skeleton className="h-96 bg-surface-1" />;
-
-  return (
-    <Card className="bg-surface-1 border-white/10 flex flex-col h-[70vh]" data-testid="founding-assistant">
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {thread.length === 0 && (
-          <div className="text-center py-12 space-y-2">
-            <Sparkles className="h-5 w-5 text-graphite mx-auto" />
-            <p className="text-sm text-graphite">Your assistant. Ask it anything general.</p>
-            <p className="text-xs text-carbon">
-              It can&apos;t see the agency&apos;s client data or anyone else&apos;s information.
-            </p>
-          </div>
-        )}
-        {thread.map((m) => (
-          <div key={m.id} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
-            <div className={`max-w-[80%] rounded-lg p-3 text-sm whitespace-pre-line break-words ${
-              m.role === "user" ? "bg-surface-2 border border-white/10" : "bg-accent/5 border border-accent/20"
-            }`}>
-              {m.content}
-            </div>
-          </div>
-        ))}
-        <div ref={endRef} />
-      </div>
-      <div className="border-t border-white/10 p-3 flex items-center gap-2">
-        <Input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
-          placeholder="Ask your assistant…"
-          className="bg-surface-2 border-white/10"
-          data-testid="founding-assistant-input"
+        <NavRail
+          items={withBadges(TABS)}
+          activeKey={tab}
+          onSelect={setTab}
+          groupId="founding-rail"
+          collapsed={railCollapsed}
         />
-        <Button onClick={ask} disabled={asking} data-testid="founding-assistant-send">
-          {asking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </Button>
+
+        <div className="border-t border-white/[0.07] p-2.5">
+          <button
+            onClick={toggleRail}
+            data-testid="founding-rail-toggle"
+            aria-label={railCollapsed ? "Expand the sidebar" : "Collapse the sidebar"}
+            className={`group flex w-full items-center rounded-lg py-2 text-[11px] text-carbon transition-colors hover:text-foreground ${
+              railCollapsed ? "justify-center" : "gap-2 px-1"
+            }`}
+          >
+            {railCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <>
+                <PanelLeftClose className="h-4 w-4 shrink-0" /> Collapse
+              </>
+            )}
+          </button>
+
+          {!railCollapsed && (
+            <>
+              <button
+                onClick={replayGuide}
+                data-testid="founding-replay-tour"
+                className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-[11px] text-carbon transition-colors hover:text-primary"
+              >
+                <Compass className="h-3 w-3" /> Replay the guide
+              </button>
+              <p className="mt-2 flex items-center gap-1.5 px-1 font-mono text-[9px] uppercase tracking-[0.18em] text-carbon">
+                <kbd className="rounded border border-white/12 bg-white/[0.05] px-1">1</kbd>–
+                <kbd className="rounded border border-white/12 bg-white/[0.05] px-1">9</kbd>
+                jumps
+              </p>
+              <p className="obx-figure mt-1.5 px-1 font-mono text-[10px] uppercase tracking-[0.18em] text-carbon">
+                {me ? `${me.members} member${me.members === 1 ? "" : "s"}` : " "}
+              </p>
+            </>
+          )}
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="obx-aurora sticky top-0 z-40 border-b border-white/[0.07] bg-black/60 backdrop-blur-xl">
+          <div className="relative z-10 mx-auto flex max-w-5xl items-center gap-3 px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <AnimatePresence mode="wait">
+                <motion.h1
+                  key={tab}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="truncate font-display text-base font-bold tracking-tight sm:text-lg"
+                >
+                  <span className="md:hidden">Founding Circle</span>
+                  <span className="hidden md:inline">{active?.label}</span>
+                </motion.h1>
+              </AnimatePresence>
+              <p className="truncate font-mono text-[9px] uppercase tracking-[0.2em] text-graphite md:hidden">
+                {me ? `${me.members} member${me.members === 1 ? "" : "s"}` : " "}
+              </p>
+            </div>
+
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <span className="hidden max-w-[14ch] truncate text-sm text-graphite sm:block">
+                {user?.name}
+              </span>
+              <MemberGreeting />
+              <NotificationBell testId="founding-notifications" onNavigate={reloadCounts} />
+              <button
+                onClick={logout}
+                data-testid="founding-logout"
+                aria-label="Sign out"
+                className="obx-glass obx-lift flex h-9 w-9 items-center justify-center rounded-xl"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-24 pt-5 sm:px-6 sm:pt-6 md:pb-10">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={tab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+            >
+              {tab === "membership" && <MembershipPassport />}
+              {tab === "chat" && <CommunityRoom onRead={onRoomRead} />}
+              {tab === "assistant" && <PortalAssistant audience="member" />}
+              {tab === "directory" && <MemberDirectory />}
+              {tab === "projects" && <CircleProjects />}
+              {tab === "refer" && <ReferralDesk />}
+              {tab === "profile" && <MemberProfile />}
+              {tab === "guidelines" && <Guidelines />}
+              {tab === "help" && <Help onReplayTour={replayGuide} />}
+            </motion.div>
+          </AnimatePresence>
+        </main>
       </div>
-    </Card>
+
+      <TabBar
+        items={[
+          ...withBadges(PRIMARY),
+          {
+            key: "__more",
+            label: "More",
+            short: "More",
+            icon: MoreHorizontal,
+            badge: 0,
+            testId: "founding-tabbar-more",
+          },
+        ]}
+        activeKey={OVERFLOW.some((t) => t.key === tab) ? "__more" : tab}
+        onSelect={(key) => (key === "__more" ? setMoreOpen(true) : setTab(key))}
+        groupId="founding-tabs"
+        testId="founding-tabbar"
+        hideFrom="md"
+      />
+
+      <MoreSheet
+        open={moreOpen}
+        items={withBadges(OVERFLOW)}
+        activeKey={tab}
+        onSelect={setTab}
+        onClose={() => setMoreOpen(false)}
+        hideFrom="md"
+      />
+
+      {showGuide && <PortalTour steps={TOUR} title="Founding Circle · Guide" />}
+    </div>
   );
 }

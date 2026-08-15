@@ -4,11 +4,12 @@ import re
 from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, create_model
 
 import cashfree
 from database import db, serialize_doc, serialize_list, to_object_id
 from auth_utils import get_current_user, require_admin, require_staff, hash_password, log_audit, PERMISSION_MODULES
+import email_theme as T
 from email_service import send_invite_email, get_brand, build_wrapper, send_email, BRAND_DEFAULTS
 from finance_utils import SUPPORTED_CURRENCIES
 
@@ -20,41 +21,78 @@ LOGO_MIME = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", 
 MAX_LOGO_BYTES = 1_000_000  # 1 MB
 
 
-class EmailBrandSettings(BaseModel):
-    logo_url: Optional[str] = None
-    show_logo: Optional[bool] = None
-    brand_name: Optional[str] = None
-    tagline: Optional[str] = None
-    bg_color: Optional[str] = None
-    card_color: Optional[str] = None
-    text_color: Optional[str] = None
-    muted_color: Optional[str] = None
-    accent_color: Optional[str] = None
-    accent_text_color: Optional[str] = None
-    border_color: Optional[str] = None
-    box_color: Optional[str] = None
-    footer_text: Optional[str] = None
-    footer_note: Optional[str] = None
+#: Built from the token list rather than typed out, so a token added to
+#: `email_theme.TOKENS` is settable the moment it exists. The hand-written
+#: version of this model was missing eight of them, which is a field the UI can
+#: show and the API will silently drop.
+EmailBrandSettings = create_model(
+    "EmailBrandSettings",
+    **{k: (Optional[bool] if k in T.BOOL_KEYS else Optional[str], None) for k in T.TOKENS},
+)
 
 
 class TestEmailRequest(BaseModel):
     to: Optional[EmailStr] = None
+    template: Optional[str] = None
 
 
-def _sample_email_html(brand: dict) -> str:
-    """A representative branded email body, used for live preview and test sends."""
-    accent, atext, box, muted = brand["accent_color"], brand["accent_text_color"], brand["box_color"], brand["muted_color"]
-    inner = f"""
-      <tr><td style="font-size:22px;font-weight:700;padding-bottom:10px;">Invoice INV-0042</td></tr>
-      <tr><td style="font-size:14px;color:{muted};padding-bottom:20px;line-height:1.6;">A new invoice has been issued to your account. The full invoice is attached as a PDF.</td></tr>
-      <tr><td style="background:{box};border-radius:10px;padding:18px;font-size:14px;line-height:1.7;">
-        Amount Due: <b>INR 25,000.00</b><br/>Due Date: 2026-08-01
-      </td></tr>
-      <tr><td style="padding-top:22px;">
-        <a href="#" style="display:inline-block;background:{accent};color:{atext};padding:12px 24px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:700;">Pay Invoice</a>
-      </td></tr>
+#: What the preview can show. Each one renders through the same components the
+#: real send uses, so the preview cannot flatter the template.
+PREVIEW_TEMPLATES = ("invoice", "welcome", "meeting", "proposal", "overdue")
+
+
+def _sample_email_html(brand: dict, template: str = "invoice") -> str:
+    """A representative branded email, used for live preview and test sends.
+
+    Composed from `email_theme` rather than hand-written HTML. The previous
+    version wrote its own markup with its own paddings, so it showed a layout
+    no real email used — an admin could tune the preview to look right and the
+    invoices going out would still look like something else.
     """
-    return build_wrapper(inner, brand)
+    b = brand
+    if template == "welcome":
+        rows = (T.eyebrow("Your portal", b)
+                + T.heading("Welcome, Priya", b)
+                + T.lead("We've set up a secure portal where you can follow your projects, "
+                         "settle invoices, sign documents and reach your team directly.", b)
+                + T.panel([("Email", "priya@example.com"),
+                           ("Temporary password", "<span style='font-family:monospace'>7f2b-91ac</span>")], b)
+                + T.button("Open your portal", "#", b)
+                + T.note("You'll be asked to set your own password the first time you sign in.", b))
+    elif template == "meeting":
+        rows = (T.eyebrow("Confirmed", b)
+                + T.heading("You're booked, Priya", b)
+                + T.lead("Your discovery call with Obrinex is confirmed.", b)
+                + T.panel([("When", "Thursday, 21 August 2026 at 14:30 IST"),
+                           ("Where", "Google Meet")], b)
+                + T.button("Reschedule", "#", b, space=8)
+                + T.button("Cancel", "#", b, variant="secondary", space=8)
+                + T.note("Need to change something? Use the buttons above, or just reply.", b))
+    elif template == "proposal":
+        rows = (T.eyebrow("Proposal", b)
+                + T.heading("Lead automation, phase one", b)
+                + T.lead("Here's the proposal in full. Open it online when you're ready to "
+                         "accept or decline, or read the attached PDF first.", b)
+                + T.button("Review the proposal", "#", b)
+                + T.note("The full proposal is attached as a PDF.", b))
+    elif template == "overdue":
+        rows = (T.eyebrow("Payment overdue", b)
+                + T.heading("Invoice INV-0042", b)
+                + T.lead("This invoice is now more than a week overdue. Please arrange payment "
+                         "as soon as possible, or reply and tell us if there's something we "
+                         "can help resolve.", b)
+                + T.panel([("Amount due", "INR 25,000.00"), ("Was due", "2026-08-01")], b)
+                + T.button("Settle this invoice", "#", b)
+                + T.note("Already paid? Reply to this email and we'll reconcile it.", b))
+    else:
+        rows = (T.eyebrow("Invoice", b)
+                + T.heading("INV-0042", b)
+                + T.lead("A new invoice has been issued to your account.", b)
+                + T.panel([("Amount due", "INR 25,000.00"), ("Due", "2026-09-01")], b)
+                + T.button("Pay this invoice", "#", b, space=6)
+                + T.note("Card, UPI, net banking and wallets.", b)
+                + T.note("The full invoice is attached as a PDF for your records.", b))
+    return build_wrapper(rows, b, preheader="A preview of your branded Obrinex email.")
 
 
 @router.get("/email-template")
@@ -64,8 +102,12 @@ async def get_email_template(user: dict = Depends(require_staff)):
 
 
 @router.get("/email-template/preview")
-async def preview_email_template(user: dict = Depends(require_staff)):
-    return {"html": _sample_email_html(await get_brand())}
+async def preview_email_template(template: str = "invoice", user: dict = Depends(require_staff)):
+    """Any of the real templates, rendered with the current brand."""
+    if template not in PREVIEW_TEMPLATES:
+        template = "invoice"
+    return {"html": _sample_email_html(await get_brand(), template),
+            "templates": list(PREVIEW_TEMPLATES), "template": template}
 
 
 @router.put("/email-template")
@@ -105,7 +147,7 @@ async def upload_email_logo(file: UploadFile = File(...), user: dict = Depends(r
 @router.post("/email-template/test")
 async def send_test_email(payload: TestEmailRequest, user: dict = Depends(require_admin)):
     to = payload.to or user["email"]
-    html = _sample_email_html(await get_brand())
+    html = _sample_email_html(await get_brand(), payload.template or "invoice")
     await send_email(to, "Your Obrinex email — brand preview", html)
     return {"message": f"Test email sent to {to}"}
 

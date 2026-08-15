@@ -28,7 +28,7 @@ question rather than an answer.
 import logging
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -46,7 +46,6 @@ router = APIRouter(prefix="/api", tags=["founding"])
 APPLICATIONS = "founding_applications"
 ROUNDS = "founding_rounds"
 CHAT = "founding_chat_messages"
-ASSISTANT = "founding_assistant_messages"
 
 #: The members' own role. Distinct from `client` on purpose - see module docs.
 FOUNDING_ROLE = "founding"
@@ -663,6 +662,192 @@ async def my_membership(user: dict = Depends(require_founding)):
     }
 
 
+# --- Membership: the passport --------------------------------------------------
+#
+# Everything below is *derived*, never stored. A membership number that lives in
+# a column can drift from the thing it names; one computed from the intake and
+# the order of admission cannot, because those two facts are the membership.
+
+#: Seat order within an intake. Sorted by when the decision was made, so the
+#: fourth person admitted in 2026-Q3 is seat 4 for good — a later approval
+#: cannot renumber someone who was already in.
+async def _seat_number(application: dict) -> int:
+    round_key = application.get("round") or founding.round_key()
+    peers = await db[APPLICATIONS].find(
+        {"status": founding.APPROVED, "round": round_key},
+        {"decided_at": 1},
+    ).to_list(200)
+    # Undecided-but-approved rows would sort unpredictably against real dates,
+    # so they fall to the end rather than jumbling the people with timestamps.
+    peers.sort(key=lambda p: (p.get("decided_at") or "9999"))
+    for index, peer in enumerate(peers, start=1):
+        if str(peer["_id"]) == str(application["_id"]):
+            return index
+    return len(peers) + 1
+
+
+def _member_number(round_key: str, seat: int) -> str:
+    """`OBX-2026-Q3-004`. Reads as an identity, parses as a fact."""
+    return f"OBX-{round_key}-{seat:03d}"
+
+
+def _parse(value) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+#: One quarter of membership, in days. Used only for the season stamp.
+SEASON_DAYS = 90
+
+#: How many posts make someone a voice in the room rather than a visitor.
+VOICE_POSTS = 25
+
+
+async def _stamps(application: dict, profile: dict) -> list:
+    """The journey, read back out of records that already exist.
+
+    Nothing here is awarded by a background job — each stamp is a question
+    asked of the database at read time, so a stamp can never be out of step
+    with the thing it claims happened.
+    """
+    app_id = str(application["_id"])
+    joined = _parse(application.get("decided_at"))
+    now = datetime.now(timezone.utc)
+
+    # The room stores `author_id` as the *user* id, not the application id, so
+    # the member's posts have to be found through their user record.
+    user = await db.users.find_one({"founding_application_id": app_id})
+    user_id = str(user["_id"]) if user else None
+
+    first_post = None
+    post_count = 0
+    if user_id:
+        post_count = await db[CHAT].count_documents({"author_id": user_id})
+        earliest = await db[CHAT].find({"author_id": user_id}).sort(
+            "created_at", 1).to_list(1)
+        first_post = earliest[0].get("created_at") if earliest else None
+
+    referrals = await db[REFERRALS].find(
+        {"referrer_application_id": app_id}).sort("created_at", 1).to_list(200)
+    first_referral = referrals[0].get("created_at") if referrals else None
+
+    # Someone they introduced who actually got in. The strongest thing a member
+    # can do for the circle, so it gets its own stamp rather than a counter.
+    sponsored_at = None
+    for row in referrals:
+        if not row.get("used_by_application_id"):
+            continue
+        introduced = await db[APPLICATIONS].find_one(
+            {"_id": to_object_id(row["used_by_application_id"])})
+        if introduced and introduced.get("status") == founding.APPROVED:
+            when = introduced.get("decided_at")
+            if when and (sponsored_at is None or when < sponsored_at):
+                sponsored_at = when
+
+    told_us = bool((profile.get("headline") or "").strip()
+                   or (profile.get("bio") or "").strip())
+    builds = len(profile.get("projects") or []) > 0
+    profile_touched = profile.get("updated_at")
+
+    # Dated to the day it was actually reached, not to today — a stamp that
+    # moves every time the page loads is a clock, not a record.
+    season_at, season_hint = None, None
+    if joined:
+        elapsed = (now - joined).days
+        if elapsed >= SEASON_DAYS:
+            season_at = (joined + timedelta(days=SEASON_DAYS)).isoformat()
+        else:
+            season_hint = f"{SEASON_DAYS - elapsed} days to go"
+
+    return [
+        {"key": "admitted", "label": "Admitted",
+         "note": "The day the circle said yes.",
+         "earned_at": application.get("decided_at")},
+        {"key": "identified", "label": "Named",
+         "note": "Wrote a line about what you do.",
+         "earned_at": profile_touched if told_us else None,
+         "hint": "Add a headline under Profile."},
+        {"key": "first_word", "label": "First Word",
+         "note": "Said something in the room.",
+         "earned_at": first_post,
+         "hint": "Post once in Community."},
+        {"key": "builder", "label": "Builder",
+         "note": "Put work on the table.",
+         "earned_at": profile_touched if builds else None,
+         "hint": "List a project under Profile."},
+        {"key": "connector", "label": "Connector",
+         "note": "Minted an invitation.",
+         "earned_at": first_referral,
+         "hint": "Create an invitation under Refer."},
+        {"key": "sponsor", "label": "Sponsor",
+         "note": "Someone you introduced got in.",
+         "earned_at": sponsored_at,
+         "hint": "Nobody you invited has been admitted yet."},
+        {"key": "voice", "label": "Voice",
+         "note": f"{VOICE_POSTS} posts in the room.",
+         "earned_at": first_post if post_count >= VOICE_POSTS else None,
+         "hint": f"{max(0, VOICE_POSTS - post_count)} posts to go"},
+        {"key": "season", "label": "Season One",
+         "note": "A full quarter inside.",
+         "earned_at": season_at,
+         "hint": season_hint or "Counting from the day you joined."},
+    ]
+
+
+@router.get("/founding/membership")
+async def my_passport(user: dict = Depends(require_founding)):
+    """Everything that says *you are a member*: the number, the tenure, the
+    journey, and what the membership actually entitles you to."""
+    application = await _member(user)
+    profile = await _profile(application)
+
+    round_key = application.get("round") or founding.round_key()
+    seat = await _seat_number(application)
+    joined = _parse(application.get("decided_at"))
+    tenure_days = (datetime.now(timezone.utc) - joined).days if joined else None
+
+    app_id = str(application["_id"])
+    referrals = await db[REFERRALS].find(
+        {"referrer_application_id": app_id}).to_list(200)
+    landed = [r for r in referrals if r.get("used_at")]
+    admitted = 0
+    for row in landed:
+        if not row.get("used_by_application_id"):
+            continue
+        introduced = await db[APPLICATIONS].find_one(
+            {"_id": to_object_id(row["used_by_application_id"])})
+        if introduced and introduced.get("status") == founding.APPROVED:
+            admitted += 1
+
+    return {
+        "member_number": _member_number(round_key, seat),
+        "name": application.get("name"),
+        "company": (application.get("answers") or {}).get("company") or "",
+        "headline": profile.get("headline") or "",
+        "seat": seat,
+        "seats_total": founding.SEATS_PER_INTAKE,
+        "intake": round_key,
+        "joined_at": application.get("decided_at"),
+        "tenure_days": tenure_days,
+        "members": await _total_members(),
+        "cohort": await _approved_in_round(round_key),
+        "status": "active",
+        "stamps": await _stamps(application, profile),
+        "perks": {
+            "invites_total": REFERRAL_CAP,
+            "invites_used": len(referrals),
+            "invites_remaining": max(0, REFERRAL_CAP - len(referrals)),
+            "invites_landed": len(landed),
+            "members_admitted": admitted,
+        },
+    }
+
+
 # --- Members: profile, directory, projects ------------------------------------
 #
 # A member's application is not their profile. The application is a fixed record
@@ -993,7 +1178,71 @@ async def post_chat(payload: ChatPost, user: dict = Depends(require_circle)):
     message = {"author_id": user["id"], **await _author(user),
                "body": payload.body.strip(), "created_at": _now()}
     result = await db[CHAT].insert_one(message)
+    await _notify_circle(message, exclude_user_id=user["id"])
     return serialize_doc(await db[CHAT].find_one({"_id": result.inserted_id}))
+
+
+# --- The room's unread state ---------------------------------------------------
+#
+# Read state is a marker per person, not a flag per message. Ten members and one
+# shared room means a per-message `read_by` array would grow with the circle and
+# be rewritten on every glance; a single timestamp answers the only question the
+# interface asks — is there anything since I last looked.
+
+READS = "founding_reads"
+
+
+async def _notify_circle(message: dict, *, exclude_user_id: str) -> None:
+    """Tell everyone else in the room that something was said.
+
+    Best-effort on purpose: a failure to write a notification must never lose
+    the message that caused it, so this swallows rather than raises.
+    """
+    try:
+        recipients = await db.users.find(
+            {"role": {"$in": [FOUNDING_ROLE, "admin", "team_member"]}},
+            {"_id": 1},
+        ).to_list(200)
+        now = _now()
+        rows = [{
+            "user_id": str(person["_id"]),
+            "type": "founding_chat",
+            "title": f"{message.get('author_name') or 'Someone'} posted in the circle",
+            "message": (message.get("body") or "")[:200],
+            "link": "/founding-portal?tab=chat",
+            "read": False,
+            "created_at": now,
+        } for person in recipients if str(person["_id"]) != str(exclude_user_id)]
+        if rows:
+            await db.notifications.insert_many(rows)
+    except Exception:
+        logger.warning("Could not write circle notifications", exc_info=True)
+
+
+@router.get("/founding/unread")
+async def unread(user: dict = Depends(require_circle)):
+    """How many messages have landed in the room since this person last read it.
+
+    Their own posts never count: you do not have unread mail from yourself.
+    """
+    marker = await db[READS].find_one({"user_id": user["id"]})
+    since = (marker or {}).get("chat_read_at")
+    query = {"author_id": {"$ne": user["id"]}}
+    if since:
+        query["created_at"] = {"$gt": since}
+    return {"community": await db[CHAT].count_documents(query)}
+
+
+@router.post("/founding/chat/read")
+async def mark_chat_read(user: dict = Depends(require_circle)):
+    """Called when the room is on screen. Idempotent — the marker only ever
+    moves forward, because it is always set to now."""
+    await db[READS].update_one(
+        {"user_id": user["id"]},
+        {"$set": {"chat_read_at": _now()}},
+        upsert=True,
+    )
+    return {"community": 0}
 
 
 @router.delete("/founding/chat/{message_id}")
@@ -1008,89 +1257,14 @@ async def delete_chat_message(message_id: str, user: dict = Depends(get_current_
     return {"message": "Deleted"}
 
 
-class AssistantAsk(BaseModel):
-    message: str = Field(min_length=1, max_length=4000)
-
-
-ASSISTANT_SYSTEM = """You are the Founding Circle assistant at Obrinex, an AI \
-automation agency. You help one member with general questions: how the circle \
-works, how to think about a business problem, drafting and reviewing their own \
-writing, and finding their way around their portal.
-
-Rules you do not break:
-- You have no access to the agency's client data, invoices, or other members' \
-information. If asked for any of it, say plainly that you cannot see it.
-- You never reveal who else is in the Founding Circle. Membership is not public.
-- If you do not know something, say so. Do not invent a feature, a price, a \
-deadline or a policy.
-- Be concise and practical.
-
-Facts you may state: the circle has ten seats; applications open on the 1st of \
-each month, close when the round fills or the month ends, and every applicant \
-hears back by the 30th."""
-
-
-@router.get("/founding/assistant")
-async def assistant_history(user: dict = Depends(require_founding)):
-    rows = await db[ASSISTANT].find({"member_id": user["id"]}) \
-        .sort("created_at", 1).to_list(100)
-    return serialize_list(rows)
-
-
-@router.post("/founding/assistant")
-async def assistant_ask(payload: AssistantAsk, user: dict = Depends(require_founding)):
-    """The member's own assistant.
-
-    Scoped to this member: the prompt carries their name and nothing about the
-    agency's other data, and the history query is filtered by `member_id`, so
-    one member's thread is not reachable from another's session.
-    """
-    doc = await _member(user)
-    import llm_providers
-
-    chain = llm_providers.chain()
-    if not chain:
-        raise HTTPException(status_code=503,
-                            detail="The assistant is not configured yet.")
-    _key, make_client, model = chain[0]
-
-    history = await db[ASSISTANT].find({"member_id": user["id"]}) \
-        .sort("created_at", -1).to_list(10)
-    turns = [{"role": m["role"], "content": m["content"]}
-             for m in reversed(history)]
-
-    messages = (
-        [{"role": "system",
-          "content": f"{ASSISTANT_SYSTEM}\n\nYou are speaking with {doc.get('name')}."}]
-        + turns
-        + [{"role": "user", "content": payload.message}]
-    )
-
-    try:
-        response = await make_client().chat.completions.create(
-            model=model, messages=messages, stream=False, timeout=30)
-        choices = getattr(response, "choices", None) or []
-        reply = ((choices[0].message.content or "") if choices else "").strip()
-    except Exception as exc:
-        logger.warning("Founding assistant call failed: %s", exc)
-        raise HTTPException(status_code=502,
-                            detail="The assistant could not answer right now. Try again.")
-
-    if not reply:
-        # An empty completion is a filtered response, not an answer. Storing it
-        # would leave a blank turn in the thread that reads as the assistant
-        # having nothing to say.
-        raise HTTPException(status_code=502,
-                            detail="The assistant returned nothing. Try rephrasing.")
-
-    now = _now()
-    await db[ASSISTANT].insert_many([
-        {"member_id": user["id"], "role": "user", "content": payload.message,
-         "created_at": now},
-        {"member_id": user["id"], "role": "assistant", "content": reply,
-         "created_at": now},
-    ])
-    return {"reply": reply}
+# The member's assistant used to live here, with its own system prompt and its
+# own copy of the facts about Obrinex. It went on telling members that intakes
+# were monthly for a full quarter after they became quarterly, because the copy
+# here was never updated with the model.
+#
+# It is now `routers/me.py`, which serves members and clients from one prompt
+# and one set of house facts — so there is exactly one place a fact about
+# Obrinex can be wrong, instead of two that can disagree.
 
 
 async def create_founding_indexes() -> None:
@@ -1101,6 +1275,5 @@ async def create_founding_indexes() -> None:
         await db[APPLICATIONS].create_index("invite_token", sparse=True)
         await db[ROUNDS].create_index("key", unique=True)
         await db[CHAT].create_index("created_at")
-        await db[ASSISTANT].create_index([("member_id", 1), ("created_at", 1)])
     except Exception as exc:
         logger.error("Could not create Founding Circle indexes: %s", exc)

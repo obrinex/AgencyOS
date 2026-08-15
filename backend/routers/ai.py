@@ -8,6 +8,16 @@ from pydantic import BaseModel
 from database import db
 from auth_utils import get_current_user, require_staff
 
+# The staff assistant. Everything in this router sees the whole agency, so every
+# endpoint in it is staff-only.
+#
+# `/chat`, `/chat-json` and `/history` took `get_current_user`, which is any
+# signed-in account — including a client. `build_crm_context()` was skipped for
+# the client role, so the business snapshot never leaked, but `mode: "guide"`
+# still returned GUIDE_CONTEXT: a full description of the internal CRM's modules
+# to anyone with a portal login who sent the right JSON. Clients and members now
+# have their own assistant at /api/me/assistant, scoped to their own data.
+
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 def _select_provider():
@@ -217,8 +227,8 @@ async def _complete_inner(messages, system, text, user_id, session_id, kind, mod
 
 
 @router.post("/chat")
-async def ai_chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
-    context = await build_crm_context() if user["role"] != "client" else "No agency data available for client role."
+async def ai_chat(payload: ChatRequest, user: dict = Depends(require_staff)):
+    context = await build_crm_context()
     if payload.mode == "guide":
         system = (
             "You are the AgencyOS Dashboard Guide AI. Help staff understand how to use the dashboard and every module. "
@@ -239,8 +249,8 @@ async def ai_chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
 
 
 @router.post("/chat-json")
-async def ai_chat_json(payload: ChatRequest, user: dict = Depends(get_current_user)):
-    context = await build_crm_context() if user["role"] != "client" else "No agency data available for client role."
+async def ai_chat_json(payload: ChatRequest, user: dict = Depends(require_staff)):
+    context = await build_crm_context()
     if payload.mode == "guide":
         system = (
             "You are the AgencyOS Dashboard Guide AI. Help staff understand how to use the dashboard and every module. "
@@ -322,7 +332,7 @@ async def draft_lead_reply(lead_id: str, user: dict = Depends(require_staff)):
 
 
 @router.get("/history")
-async def chat_history(session_id: str = "default", user: dict = Depends(get_current_user)):
+async def chat_history(session_id: str = "default", user: dict = Depends(require_staff)):
     msgs = await db.ai_chat_messages.find({"user_id": user["id"], "session_id": session_id, "kind": "chat"}).sort("created_at", 1).to_list(100)
     for m in msgs:
         m["_id"] = str(m["_id"])

@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "The assistant's voice inside the Founding Circle portal.",
+    "One line = one pre-rendered mp3 in public/audio/narrator/<id>.mp3.",
+    "",
+    "Rendered ONCE, offline, by `npm run narration`. The browser only ever plays",
+    "a static file, so a member costs nothing, waits for nothing, and the",
+    "greeting cannot break because an API key is missing on the host.",
+    "",
+    "Same voice as obrinex.space's /join flow (aura-2-thalia-en), so the person",
+    "who applied and the person who got in are greeted by the same voice.",
+    "",
+    "These lines are generic on purpose. A greeting that said the member's name",
+    "would have to be synthesised per person at runtime — which is a paid API",
+    "call on every page open, a second and a half of latency before anyone hears",
+    "'Hi', and a silent failure the day the key rotates."
+  ],
+  "voice": "aura-2-thalia-en",
+  "lines": [
+    {
+      "id": "portal-welcome",
+      "_note": "Spoken once each time a member opens the portal. Short by necessity — it plays while the page is still settling, and anything longer becomes something to sit through rather than something to be greeted by.",
+      "text": "Hi, valuable member. Glad to see you today."
+    }
+  ]
+}

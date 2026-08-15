@@ -14,7 +14,7 @@ import os
 from database import db, client, create_indexes, InvalidIdError
 from seed import seed_admin, seed_company_settings
 
-from routers import auth, crm, clients, portal, projects, finance, documents, support, knowledge, vault, files, notifications, dashboard, search, ai, settings, meetings, automations, public, notes, bookings, leadform, leadfinder, emails, payment_links, chat, policies, founding
+from routers import auth, crm, clients, portal, projects, finance, documents, support, knowledge, vault, files, notifications, dashboard, search, ai, settings, meetings, automations, public, notes, bookings, leadform, leadfinder, emails, payment_links, chat, policies, founding, me
 from reminders import reminder_loop, daily_loop
 
 IS_PRODUCTION = os.environ.get("APP_ENV", "development").lower() == "production"
@@ -92,6 +92,7 @@ app.include_router(emails.router)
 app.include_router(payment_links.router)
 app.include_router(chat.router)
 app.include_router(policies.router)
+app.include_router(me.router)
 app.include_router(founding.router)
 
 allowed_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", os.environ.get("FRONTEND_URL", "http://localhost:3000")).split(",") if origin.strip()]

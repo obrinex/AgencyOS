@@ -125,7 +125,56 @@ async def portal_files(user: dict = Depends(require_client)):
 async def portal_tickets(user: dict = Depends(require_client)):
     client_id = await get_client_id(user)
     tickets = await db.tickets.find({"client_id": client_id}).sort("created_at", -1).to_list(200)
-    return serialize_list(tickets)
+    return [{**serialize_doc(t), "unread": _ticket_unread(t)} for t in tickets]
+
+
+def _ticket_unread(ticket: dict) -> int:
+    """Replies from the team the client has not seen.
+
+    Counted against `client_read_at`, a marker the client's own device moves
+    when it opens the ticket. Internal notes are excluded before counting — a
+    badge that includes messages the client can never read would be a badge
+    they could never clear.
+    """
+    seen = ticket.get("client_read_at") or ""
+    return sum(
+        1 for m in (ticket.get("messages") or [])
+        if not m.get("internal")
+        and m.get("sender_role") != "client"
+        and (m.get("created_at") or "") > seen
+    )
+
+
+@router.get("/tickets/{ticket_id}")
+async def portal_ticket(ticket_id: str, user: dict = Depends(require_client)):
+    """One ticket, and reading it is what marks it read."""
+    client_id = await get_client_id(user)
+    ticket = await db.tickets.find_one({"_id": to_object_id(ticket_id), "client_id": client_id})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    await db.tickets.update_one(
+        {"_id": ticket["_id"]},
+        {"$set": {"client_read_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {**serialize_doc(ticket), "unread": 0}
+
+
+@router.get("/unread")
+async def portal_unread(user: dict = Depends(require_client)):
+    """The two badges the portal shell draws, in one request.
+
+    One call rather than two because the shell polls this on a timer, and a
+    navigation chrome that costs two round trips every few seconds is a cost
+    every client pays for a number that is usually zero.
+    """
+    client_id = await get_client_id(user)
+    chat = await db.chat_messages.count_documents({
+        "client_id": client_id,
+        "read_by_client": False,
+        "sender_type": {"$ne": "client"},
+    })
+    tickets = await db.tickets.find({"client_id": client_id}).to_list(200)
+    return {"chat": chat, "support": sum(_ticket_unread(t) for t in tickets)}
 
 
 @router.post("/tickets")
@@ -146,9 +195,24 @@ async def portal_ticket_message(ticket_id: str, payload: TicketMessage, user: di
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     msg = {"sender_id": user["id"], "sender_role": "client", "message": payload.message, "created_at": datetime.now(timezone.utc).isoformat()}
-    await db.tickets.update_one({"_id": ticket["_id"]}, {"$push": {"messages": msg}, "$set": {"updated_at": msg["created_at"]}})
+    # Replying means they were looking at it, so the read marker moves with the
+    # reply. Without this a client can answer a message and still be told they
+    # have one waiting.
+    await db.tickets.update_one(
+        {"_id": ticket["_id"]},
+        {"$push": {"messages": msg},
+         "$set": {"updated_at": msg["created_at"], "client_read_at": msg["created_at"]}},
+    )
+    staff = await db.users.find({"role": {"$in": ["admin", "team_member"]}}, {"_id": 1}).to_list(50)
+    for person in staff:
+        await db.notifications.insert_one({
+            "user_id": str(person["_id"]), "type": "ticket_message",
+            "title": f"Reply on “{ticket.get('subject') or 'a ticket'}”",
+            "message": payload.message[:200], "link": f"/support/{ticket_id}",
+            "read": False, "created_at": msg["created_at"],
+        })
     updated = await db.tickets.find_one({"_id": ticket["_id"]})
-    return serialize_doc(updated)
+    return {**serialize_doc(updated), "unread": 0}
 
 
 @router.post("/meetings")

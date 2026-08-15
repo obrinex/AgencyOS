@@ -6,6 +6,8 @@ import { DarkGradientBg } from "@/components/ui/elegant-dark-pattern";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/layout/AppLayout";
 import PortalLayout from "@/components/layout/PortalLayout";
+import { PortalProvider } from "@/contexts/PortalContext";
+import PortalAssistant from "@/components/portal/PortalAssistant";
 
 import Login from "@/pages/Login";
 import FoundingAccept from "@/pages/founding/FoundingAccept";
@@ -95,7 +97,9 @@ function App() {
               path="/founding-portal"
               element={
                 <ProtectedRoute roles={["founding"]}>
-                  <FoundingPortal />
+                  <PortalProvider>
+                    <FoundingPortal />
+                  </PortalProvider>
                 </ProtectedRoute>
               }
             />
@@ -148,7 +152,9 @@ function App() {
               path="/portal"
               element={
                 <ProtectedRoute roles={["client"]}>
-                  <PortalLayout />
+                  <PortalProvider>
+                    <PortalLayout />
+                  </PortalProvider>
                 </ProtectedRoute>
               }
             >
@@ -160,6 +166,20 @@ function App() {
               <Route path="contracts" element={<PortalContracts />} />
               <Route path="files" element={<PortalFiles />} />
               <Route path="chat" element={<PortalChat />} />
+              <Route
+                path="assistant"
+                element={
+                  <div className="mx-auto max-w-3xl p-4 sm:p-6">
+                    <header className="mb-4">
+                      <h1 className="font-display text-2xl font-bold tracking-tight">Assistant</h1>
+                      <p className="mt-1 text-sm text-graphite">
+                        Ask about your account, your invoices, or anything else.
+                      </p>
+                    </header>
+                    <PortalAssistant audience="client" />
+                  </div>
+                }
+              />
               <Route path="policies" element={<PortalPolicies />} />
               <Route path="support" element={<PortalSupport />} />
               <Route path="support/:id" element={<PortalTicketDetail />} />

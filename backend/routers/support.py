@@ -87,5 +87,20 @@ async def add_message(ticket_id: str, payload: TicketMessage, user: dict = Depen
         raise HTTPException(status_code=404, detail="Ticket not found")
     msg = {"sender_id": user["id"], "sender_role": user["role"], "message": payload.message, "internal": payload.internal, "created_at": datetime.now(timezone.utc).isoformat()}
     await db.tickets.update_one({"_id": ticket["_id"]}, {"$push": {"messages": msg}, "$set": {"updated_at": msg["created_at"]}})
+
+    # Tell the client — but never about an internal note, which exists precisely
+    # because they are not meant to see it. Notifying on one would leak both its
+    # existence and its first 200 characters.
+    if not payload.internal and ticket.get("client_id"):
+        client = await db.clients.find_one({"_id": to_object_id(ticket["client_id"])})
+        if client and client.get("portal_user_id"):
+            await db.notifications.insert_one({
+                "user_id": str(client["portal_user_id"]), "type": "ticket_message",
+                "title": f"Reply on “{ticket.get('subject') or 'your ticket'}”",
+                "message": payload.message[:200],
+                "link": f"/portal/support/{ticket_id}",
+                "read": False, "created_at": msg["created_at"],
+            })
+
     updated = await db.tickets.find_one({"_id": ticket["_id"]})
     return serialize_doc(updated)

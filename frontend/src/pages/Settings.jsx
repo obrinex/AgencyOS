@@ -114,11 +114,18 @@ export default function Settings() {
     }
   };
 
-  const COLOR_KEYS = ["bg_color", "card_color", "text_color", "muted_color", "accent_color", "accent_text_color", "border_color", "box_color"];
+  // Every colour token the email theme reads. Adding one here without adding it
+  // to `email_theme.TOKENS` does nothing; leaving one out means the admin can
+  // never change it, which is how eight of these came to be uneditable.
+  const COLOR_KEYS = ["bg_color", "card_color", "text_color", "body_color", "muted_color",
+    "accent_color", "accent_text_color", "link_color", "border_color", "box_color",
+    "box_border_color", "success_color", "danger_color"];
   const applyPreset = (preset) => {
     const light = {
       bg_color: "#F4F2ED", card_color: "#FFFFFF", text_color: "#141414", muted_color: "#6B6B70",
       accent_color: "#141414", accent_text_color: "#FFFFFF", border_color: "#E4E1DA", box_color: "#F4F2ED",
+      body_color: "#3D4852", link_color: "#141414", box_border_color: "#E4E1DA",
+      success_color: "#15803D", danger_color: "#B91C1C",
     };
     // "dark" pulls color keys from server defaults; both presets touch colors only (logo/name/footer untouched)
     const colors = preset === "light" ? light : Object.fromEntries(COLOR_KEYS.map((k) => [k, brandDefaults?.[k]]));
@@ -276,12 +283,17 @@ export default function Settings() {
                     {[
                       { key: "bg_color", label: "Background" },
                       { key: "card_color", label: "Card" },
-                      { key: "text_color", label: "Text" },
+                      { key: "text_color", label: "Headings" },
+                      { key: "body_color", label: "Body text" },
                       { key: "muted_color", label: "Muted text" },
                       { key: "accent_color", label: "Accent / buttons" },
                       { key: "accent_text_color", label: "Button text" },
+                      { key: "link_color", label: "Links" },
                       { key: "border_color", label: "Borders" },
                       { key: "box_color", label: "Info boxes" },
+                      { key: "box_border_color", label: "Info box border" },
+                      { key: "success_color", label: "Success" },
+                      { key: "danger_color", label: "Overdue / danger" },
                     ].map((c) => (
                       <div key={c.key} className="space-y-1">
                         <Label className="text-xs">{c.label}</Label>
