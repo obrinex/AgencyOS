@@ -102,7 +102,7 @@ export default function PortalLayout() {
   }, [navOpen]);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background" data-testid="portal-layout">
+    <div className="relative flex h-screen w-full overflow-hidden" data-testid="portal-layout">
       {/* Desktop sidebar - unchanged */}
       <aside className="hidden md:flex w-[220px] flex-col shrink-0 border-r border-white/10">
         <div className="flex h-16 items-center gap-2 px-4 border-b border-white/10">
@@ -137,7 +137,7 @@ export default function PortalLayout() {
         />
         <aside
           className={cn(
-            "absolute left-0 top-0 flex h-full w-[82vw] max-w-[300px] flex-col border-r border-white/10 bg-background transition-transform duration-200",
+            "absolute left-0 top-0 flex h-full w-[82vw] max-w-[300px] flex-col border-r border-white/10 bg-black/80 backdrop-blur-xl transition-transform duration-200",
             navOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >

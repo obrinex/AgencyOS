@@ -44,7 +44,7 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background" data-testid="app-layout">
+    <div className="relative flex h-screen w-full overflow-hidden" data-testid="app-layout">
       <Sidebar />
       <MobileNav open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
       <div className="flex flex-1 flex-col overflow-hidden">

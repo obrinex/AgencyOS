@@ -164,7 +164,7 @@ export default function Sidebar() {
     <aside
       data-testid="main-sidebar"
       className={cn(
-        "hidden md:flex flex-col shrink-0 border-r border-white/10 bg-background transition-all duration-200",
+        "hidden md:flex flex-col shrink-0 border-r border-white/10 bg-black/25 backdrop-blur-sm transition-all duration-200",
         collapsed ? "w-[68px]" : "w-[240px]"
       )}
     >

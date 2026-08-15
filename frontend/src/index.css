@@ -24,12 +24,11 @@ body {
 
        `fixed` so the gradient belongs to the viewport, not the document — it
        must not slide away under a long table. */
+    /* Flat black only. The gradient, streaks, grain and dot lattice are now a
+       real element — components/ui/elegant-dark-pattern.jsx, mounted once at the
+       root of App.js. Leaving the old CSS washes here would have them showing
+       through the new layer and muddying its corner light. */
     background-color: #000;
-    background-image:
-        radial-gradient(ellipse 80% 60% at 15% 0%, rgba(255, 255, 255, 0.055), transparent 60%),
-        radial-gradient(ellipse 70% 50% at 100% 100%, rgba(255, 255, 255, 0.035), transparent 65%);
-    background-attachment: fixed;
-    background-repeat: no-repeat;
 }
 
 code, .font-mono {

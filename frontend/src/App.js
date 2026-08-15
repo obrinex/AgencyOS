@@ -2,6 +2,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
+import { DarkGradientBg } from "@/components/ui/elegant-dark-pattern";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/layout/AppLayout";
 import PortalLayout from "@/components/layout/PortalLayout";
@@ -65,6 +66,15 @@ import PublicProposal from "@/pages/PublicProposal";
 function App() {
   return (
     <div className="App">
+      {/* The ground, mounted once for the entire product.
+
+          Here rather than in AppLayout because "everywhere" has to include
+          the surfaces that have no layout: Login, the public proposal and
+          agreement pages, the founding portal, the pay-invoice screen. One
+          fixed layer at the root also means it is painted once and never
+          re-rendered on navigation — mounting it per page would rebuild
+          five masked gradient layers on every route change. */}
+      <DarkGradientBg fixed />
       <BrowserRouter>
         <AuthProvider>
           <Routes>

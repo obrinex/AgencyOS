@@ -50,7 +50,7 @@ export default function Topbar({ onOpenCommandPalette, onOpenAssistant, onOpenMo
   return (
     <header
       data-testid="topbar"
-      className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-white/10 bg-background/80 backdrop-blur-xl px-4 md:px-6"
+      className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-white/10 bg-black/40 backdrop-blur-xl px-4 md:px-6"
     >
       <button
         type="button"
