@@ -4,6 +4,10 @@
   "rewrites": [
     { "source": "/api", "destination": "/api/proxy?path=" },
     { "source": "/api/(.*)", "destination": "/api/proxy?path=$1" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "//": "SPA fallback for client-side routes. It must NOT swallow /static/ - that catch-all used to match everything except /api/, so a request for a hashed bundle from a previous deploy returned index.html with a 200 and Content-Type: text/html. The browser then parsed HTML as JavaScript, threw 'Unexpected token <', and rendered a blank page. Anyone holding a cached index.html after a deploy got a dead app with no useful error. A missing asset must 404 honestly.",
+      "source": "/((?!api/|static/).*)",
+      "destination": "/index.html"
+    }
   ]
 }
