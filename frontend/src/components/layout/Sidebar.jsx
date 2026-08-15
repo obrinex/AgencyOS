@@ -112,9 +112,12 @@ function NavItem({ item, collapsed = false, indented = false, onNavigate }) {
           // make anything move under your cursor.
           "transition-[color,background-color] duration-200",
           indented && !collapsed && "ml-3",
+          // White-alpha rather than an opaque surface fill: the sidebar is
+          // translucent over the gradient, so an opaque active state punched a
+          // solid rectangle through it.
           isActive
-            ? "bg-surface-2 text-foreground"
-            : "text-ash hover:bg-surface-1 hover:text-foreground",
+            ? "bg-white/[0.09] text-foreground"
+            : "text-ash hover:bg-white/[0.05] hover:text-foreground",
         )
       }
     >

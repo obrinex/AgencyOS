@@ -50,13 +50,13 @@ export default function Topbar({ onOpenCommandPalette, onOpenAssistant, onOpenMo
   return (
     <header
       data-testid="topbar"
-      className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-white/10 bg-black/40 backdrop-blur-xl px-4 md:px-6"
+      className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-white/[0.08] bg-black/50 px-4 backdrop-blur-xl md:px-6"
     >
       <button
         type="button"
         data-testid="mobile-menu-trigger"
         onClick={onOpenMobileNav}
-        className="md:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-surface-1 hover:bg-surface-2 transition-colors"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] backdrop-blur-sm transition-colors hover:bg-white/[0.08] md:hidden"
         aria-label="Open navigation"
       >
         <Menu className="h-5 w-5" />
@@ -65,11 +65,11 @@ export default function Topbar({ onOpenCommandPalette, onOpenAssistant, onOpenMo
       <button
         data-testid="global-search-trigger"
         onClick={onOpenCommandPalette}
-        className="flex items-center gap-2 rounded-lg border border-white/10 bg-surface-1 px-3 py-2 text-sm text-graphite hover:text-foreground hover:border-white/20 transition-colors w-full max-w-sm"
+        className="group flex w-full max-w-sm items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-graphite backdrop-blur-sm transition-colors hover:border-white/25 hover:bg-white/[0.07] hover:text-foreground"
       >
         <Search className="h-4 w-4" />
         <span className="flex-1 text-left">Search anything...</span>
-        <kbd className="font-mono text-[10px] rounded border border-white/10 bg-surface-2 px-1.5 py-0.5">⌘K</kbd>
+        <kbd className="rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
       </button>
 
       <div className="flex items-center gap-2">
@@ -78,7 +78,7 @@ export default function Topbar({ onOpenCommandPalette, onOpenAssistant, onOpenMo
           onClick={onOpenAssistant}
           variant="outline"
           size="sm"
-          className="gap-2 border-white/10 bg-surface-1 hover:bg-surface-2"
+          className="gap-2 border-white/10 bg-white/[0.04] backdrop-blur-sm hover:bg-white/[0.08]"
         >
           <Sparkles className="h-4 w-4" />
           <span className="hidden sm:inline">AI Assistant</span>
@@ -86,7 +86,7 @@ export default function Topbar({ onOpenCommandPalette, onOpenAssistant, onOpenMo
 
         <DropdownMenu onOpenChange={(open) => open && loadNotifications()}>
           <DropdownMenuTrigger asChild>
-            <button data-testid="notifications-trigger" className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-surface-1 hover:bg-surface-2 transition-colors">
+            <button data-testid="notifications-trigger" className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] backdrop-blur-sm transition-colors hover:bg-white/[0.08]">
               <Bell className="h-4 w-4" />
               {unreadCount > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
@@ -126,9 +126,9 @@ export default function Topbar({ onOpenCommandPalette, onOpenAssistant, onOpenMo
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button data-testid="user-menu-trigger" className="flex items-center gap-2 rounded-lg pl-1 pr-2 py-1 hover:bg-surface-1 transition-colors">
+            <button data-testid="user-menu-trigger" className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 transition-colors hover:bg-white/[0.06]">
               <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-surface-2 text-xs font-mono">{initials}</AvatarFallback>
+                <AvatarFallback className="bg-white/[0.08] font-mono text-xs">{initials}</AvatarFallback>
               </Avatar>
             </button>
           </DropdownMenuTrigger>

@@ -128,9 +128,22 @@ h1, h2, h3 {
         --surface-1: 200 8% 9%;
         --surface-2: 200 8% 13%;
         --surface-3: 200 7% 17%;
-        --carbon: 240 3% 30%;
-        --graphite: 240 3% 54%;
-        --ash: 240 5% 72%;
+        /* The neutral text ramp, re-tuned for a true-black ground.
+         *
+         * These were set against #131315. Dropping the background to #000
+         * raised the contrast the *background* needed but lowered what these
+         * actually deliver against it — carbon at 30% lightness came out around
+         * 2.3:1, well under the 4.5:1 minimum, and it is used as text in 68
+         * places: every section label in the sidebar, every eyebrow, every
+         * meta line. On the old charcoal it was merely faint. On black it was
+         * unreadable.
+         *
+         * Carbon now clears 4.5:1, graphite about 6.5:1, ash about 9:1. The
+         * cool tint matches the surfaces so the greys read as one family
+         * rather than as three different neutrals. */
+        --carbon: 200 6% 48%;
+        --graphite: 200 7% 62%;
+        --ash: 200 9% 78%;
     }
     .dark {
         --background: 0 0% 0%;
