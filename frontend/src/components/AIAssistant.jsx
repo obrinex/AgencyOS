@@ -72,7 +72,7 @@ export default function AIAssistant({ open, onOpenChange, initialPrompt, initial
               </div>
               <p className="text-sm text-graphite max-w-xs">
                 {mode === "guide"
-                  ? "Ask me how to use AgencyOS, where to find a feature, or what a dashboard metric means."
+                  ? "Ask me how to use Obrinex CRM, where to find a feature, or what a dashboard metric means."
                   : "Ask me to summarize meetings, draft emails, write proposals, analyze sales, or answer questions about your agency data."}
               </p>
               <div className="grid gap-2 w-full">
@@ -120,7 +120,7 @@ export default function AIAssistant({ open, onOpenChange, initialPrompt, initial
                   send();
                 }
               }}
-              placeholder="Ask AgencyOS AI..."
+              placeholder="Ask Obrinex AI..."
               className="min-h-[40px] max-h-32 resize-none bg-surface-2 border-white/10"
             />
             <Button data-testid="ai-assistant-send-btn" size="icon" onClick={() => send()} disabled={loading}>

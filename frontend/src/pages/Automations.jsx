@@ -32,7 +32,7 @@ export default function Automations() {
   if (error) {
     return (
       <div className="p-6" data-testid="automations-page">
-        <PageHeader title="Automation Center" description="Every automated workflow run across AgencyOS" />
+        <PageHeader title="Automation Center" description="Every automated workflow run across Obrinex CRM" />
         <LoadError message={error} onRetry={load} testId="automations-error" />
       </div>
     );
@@ -42,7 +42,7 @@ export default function Automations() {
 
   return (
     <div className="p-6" data-testid="automations-page">
-      <PageHeader title="Automation Center" description="Every automated workflow run across AgencyOS" />
+      <PageHeader title="Automation Center" description="Every automated workflow run across Obrinex CRM" />
       {logs.length === 0 ? (
         <EmptyState icon={Zap} title="No automations run yet" description="Automations trigger automatically — e.g. marking a deal as Won generates a client, project & invoice." testId="automations-empty-state" />
       ) : (

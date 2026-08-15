@@ -20,7 +20,9 @@ const NAV = [
 const linkClass = ({ isActive }) =>
   cn(
     "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors",
-    isActive ? "bg-surface-2 text-foreground" : "text-ash hover:bg-surface-1 hover:text-foreground"
+    isActive
+      ? "bg-white/[0.08] text-foreground"
+      : "text-ash hover:bg-white/[0.04] hover:text-foreground"
   );
 
 function Brand() {
@@ -30,7 +32,8 @@ function Brand() {
         O
       </div>
       <div className="flex flex-col leading-none">
-        <span className="font-display font-bold text-sm">Client Portal</span>
+        <span className="font-display font-bold text-sm tracking-tight">Client Portal</span>
+        <span className="font-mono text-[10px] tracking-[0.18em] text-graphite">OBRINEX</span>
         <span className="font-mono text-[10px] text-graphite">OBRINEX</span>
       </div>
     </div>
@@ -181,7 +184,9 @@ export default function PortalLayout() {
         </header>
 
         <main className="flex-1 overflow-y-auto scrollbar-thin">
-          <Outlet />
+          <PageTransition routeKey={location.pathname}>
+            <Outlet />
+          </PageTransition>
         </main>
       </div>
 

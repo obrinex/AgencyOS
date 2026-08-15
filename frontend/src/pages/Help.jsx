@@ -145,8 +145,8 @@ const HELP_SECTIONS = [
         steps: [
           "Click 'Connect' under Google Calendar to link your Google account (needs Calendar API credentials set up by an admin).",
           "Once connected, any meeting you create here is pushed to your primary Google Calendar automatically, and deleting it here removes the Google event too.",
-          "Click 'Sync Now' to pull existing events from your Google Calendar into AgencyOS.",
-          "'New Meeting' works even without Google connected — it just stays internal to AgencyOS.",
+          "Click 'Sync Now' to pull existing events from your Google Calendar into Obrinex CRM.",
+          "'New Meeting' works even without Google connected — it just stays internal to Obrinex CRM.",
         ],
       },
     ],
@@ -281,7 +281,7 @@ export default function Help() {
     <div className="p-6 max-w-3xl mx-auto space-y-6" data-testid="help-page">
       <PageHeader
         title="Help & How to Use"
-        description="A quick guide to every module in AgencyOS"
+        description="A quick guide to every module in Obrinex CRM"
         actions={
           <Button data-testid="help-ai-guide-btn" size="sm" className="gap-1.5" onClick={() => askGuide()}>
             <Sparkles className="h-3.5 w-3.5" /> Ask Guide AI

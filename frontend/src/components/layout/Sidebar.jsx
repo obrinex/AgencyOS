@@ -177,7 +177,7 @@ export default function Sidebar() {
         </div>
         {!collapsed && (
           <div className="flex flex-col overflow-hidden leading-none">
-            <span className="font-display text-sm font-bold tracking-tight">AgencyOS</span>
+            <span className="font-display text-sm font-bold tracking-tight">Obrinex CRM</span>
             <span className="font-mono text-[10px] tracking-[0.18em] text-graphite">OBRINEX</span>
           </div>
         )}
@@ -252,7 +252,7 @@ export function MobileNav({ open, onOpenChange }) {
             O
           </div>
           <div className="flex flex-col leading-none overflow-hidden">
-            <span className="font-display font-bold text-sm tracking-tight">AgencyOS</span>
+            <span className="font-display font-bold text-sm tracking-tight">Obrinex CRM</span>
             <span className="font-mono text-[10px] text-graphite tracking-wide">OBRINEX</span>
           </div>
         </div>

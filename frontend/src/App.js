@@ -74,7 +74,7 @@ function App() {
           fixed layer at the root also means it is painted once and never
           re-rendered on navigation — mounting it per page would rebuild
           five masked gradient layers on every route change. */}
-      <DarkGradientBg fixed />
+      <DarkGradientBg fixed accent="cyan" />
       <BrowserRouter>
         <AuthProvider>
           <Routes>

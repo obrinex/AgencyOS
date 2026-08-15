@@ -73,7 +73,7 @@ export default function Login() {
       >
         <div className="flex flex-col items-center mb-8">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-foreground text-background font-display font-bold text-lg mb-4">O</div>
-          <h1 className="font-display text-xl font-bold tracking-tight">AgencyOS</h1>
+          <h1 className="font-display text-xl font-bold tracking-tight">Obrinex CRM</h1>
           <p className="font-mono text-[11px] text-graphite tracking-widest mt-0.5">BY OBRINEX</p>
         </div>
 

@@ -512,7 +512,7 @@ export default function Settings() {
               <DialogHeader>
                 <DialogTitle>Remove team member?</DialogTitle>
                 <DialogDescription>
-                  <span className="text-foreground font-medium">{removeTarget?.name}</span> ({removeTarget?.email}) will immediately lose access to AgencyOS. Their past work (tasks, time logs, notes) stays in your records.
+                  <span className="text-foreground font-medium">{removeTarget?.name}</span> ({removeTarget?.email}) will immediately lose access to Obrinex CRM. Their past work (tasks, time logs, notes) stays in your records.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>

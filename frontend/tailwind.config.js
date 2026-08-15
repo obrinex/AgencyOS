@@ -71,9 +71,9 @@ module.exports = {
       // was doing all three jobs here, which is why dense pages read as
       // shouty: it is a display face and it has no quiet register.
       fontFamily: {
-        display: ['Archivo', 'sans-serif'],
-        sans: ['Manrope', 'Archivo', 'sans-serif'],
-        mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace']
+        display: ['"Space Grotesk"', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
       },
       keyframes: {
         'accordion-down': {
