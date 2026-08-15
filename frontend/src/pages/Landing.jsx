@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useSmoothScroll, useScrolledPast, AnimatedTextIn, Rise } from "@/components/site/SiteMotion";
 import HalftoneTrail from "@/components/site/HalftoneTrail";
+import SiteCursor, { CursorField } from "@/components/site/SiteCursor";
 import {
   ArrowRight, LayoutDashboard, Users, Receipt, FolderKanban, FileSignature,
   MessageSquare, LifeBuoy, Sparkles, Mail, Gem, Briefcase,
@@ -195,6 +196,11 @@ export default function Landing() {
 
   return (
     <div className="obx-site relative min-h-[100dvh] overflow-x-clip text-foreground" data-testid="landing-page">
+      {/* The site's cursor and the field that trails it. Both are scoped to
+          this page — the CRM behind it keeps the ordinary pointer. */}
+      <SiteCursor />
+      <CursorField />
+
 
       {/* ── Nav ──────────────────────────────────────────────────────────── */}
       <header
@@ -306,12 +312,14 @@ export default function Landing() {
           <Link
             to={signedIn ? home : "/login"}
             data-testid="landing-hero-cta"
+            data-cursor="Sign in"
             className="obx-site-mono rounded-full bg-white px-8 py-4 text-[10px] text-background transition-opacity duration-500 hover:opacity-85"
           >
             {signedIn ? "Open your portal" : "Sign in"}
           </Link>
           <button
             onClick={() => go("what")}
+            data-cursor="Look inside"
             className="obx-site-mono rounded-full border border-white/25 px-8 py-4 text-[10px] text-white transition-colors duration-500 hover:border-white/60 hover:text-white"
           >
             What it does
@@ -392,6 +400,7 @@ export default function Landing() {
                 <Link
                   to={p.cta.to}
                   data-testid={`landing-cta-${p.cta.to.split("=")[1]}`}
+                  data-cursor="Open"
                   className="obx-site-mono group mt-9 inline-flex w-fit items-center gap-2.5 border-b border-white/25 pb-1.5 text-[10px] text-white transition-colors duration-300 hover:border-white"
                 >
                   {p.cta.label}
