@@ -62,6 +62,22 @@ Set in the Vercel `backend` project, not in a file:
 tokens from it. Rotating it invalidates every unsubscribe link in email
 already delivered, so those recipients can no longer opt out from the footer.
 
+### The SPA rewrite excludes `/static/`, deliberately
+
+`frontend/vercel.json` falls back to `index.html` for client-side routes. That
+rule reads `/((?!api/|static/).*)` and the `static/` exclusion is load-bearing.
+
+Without it the catch-all matched every path except `/api/`, so a request for a
+hashed bundle from an earlier deploy — exactly what a browser holding a cached
+`index.html` asks for — returned `index.html` with a **200** and
+`Content-Type: text/html`. The browser parsed HTML as JavaScript, threw
+`Unexpected token '<'`, and rendered a blank page: no server error, no failed
+request, nothing in the logs, just a dead app after a deploy.
+
+A missing asset must 404. Note that `vercel.json` permits no comments and
+Vercel's schema rejects unknown keys such as `"//"` inside a rewrite, which is
+why this is written down here instead.
+
 ### Serverless notes
 
 - `backend/vercel.json` routes everything to `api/index.py` and sets
