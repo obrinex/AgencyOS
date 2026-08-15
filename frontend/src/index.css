@@ -82,10 +82,25 @@ h1, h2, h3 {
         --chart-5: 240 5% 96%;
         --radius: 0.75rem;
 
-        --success: 160 84% 39%;
-        --warning: 38 92% 50%;
-        --danger: 0 84% 60%;
-        --info: 217 91% 60%;
+        /* Semantic colour, quieted.
+         *
+         * These are the only hues in the product and they exist to be scanned,
+         * not admired: overdue, failed, paid, at risk. The previous set was
+         * Tailwind's stock 500s, which are tuned to sit on white — on a #131315
+         * surface they glow, and a finance table lit up like a Christmas tree
+         * stops communicating urgency because everything is urgent.
+         *
+         * Dropped roughly 12 points of saturation and 4 of lightness each. Still
+         * unmistakable against the greys, no longer the loudest thing on screen.
+         * Contrast against `--surface-1` stays above 4.5:1 for text use.
+         *
+         * Chart colours are deliberately NOT quieted — a line on a dark plot has
+         * to carry across a whole panel, and desaturating those makes series
+         * genuinely hard to tell apart. */
+        --success: 160 72% 35%;
+        --warning: 38 80% 46%;
+        --danger: 0 72% 55%;
+        --info: 217 78% 56%;
         --surface-1: 240 4% 10%;
         --surface-2: 240 4% 14%;
         --surface-3: 240 3% 18%;
@@ -127,6 +142,90 @@ h1, h2, h3 {
     }
     .card-interactive:hover {
         @apply border-white/25 bg-surface-1;
+    }
+
+    /* ── Surfaces ──────────────────────────────────────────────────────────
+       Every panel in the product is a `Card` on `bg-surface-1`, which made the
+       whole app one flat grey. These give a panel a top edge that catches
+       light, the way the website's sections are separated by hairlines rather
+       than by boxes.
+
+       `::before` rather than a border so it can be a gradient: a hairline that
+       is brightest in the middle reads as a lit edge, and a uniform one reads
+       as a box. */
+    .obx-panel {
+        position: relative;
+    }
+    .obx-panel::before {
+        content: "";
+        position: absolute;
+        inset-inline: 0;
+        top: 0;
+        height: 1px;
+        background: linear-gradient(
+            to right,
+            transparent,
+            rgba(255, 255, 255, 0.14),
+            transparent
+        );
+        pointer-events: none;
+    }
+
+    /* A row you can act on. The left hairline arrives on hover — the same
+       device as the sidebar's active marker, so "this one" means the same
+       thing everywhere in the product. */
+    .obx-row {
+        position: relative;
+        transition: background-color 150ms ease;
+    }
+    .obx-row::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: hsl(var(--foreground));
+        transform: scaleY(0);
+        transform-origin: center;
+        transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .obx-row:hover::before {
+        transform: scaleY(1);
+    }
+
+    /* ── Shared motion vocabulary ──────────────────────────────────────────
+       The identity obrinex.space carries in scroll choreography and canvas,
+       reduced to what a tool can afford. Everything here is under 400ms, none
+       of it blocks input, and all of it has a still final state so the
+       reduced-motion rule above can switch it off without breaking a layout.
+
+       `obx-page-in` is the one that does the most work: a route change reads as
+       a change of place rather than a repaint, for 180ms nobody waits on. */
+    .obx-page-in {
+        animation: obx-rise 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    .obx-reveal {
+        animation: obx-rise 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    @keyframes obx-rise {
+        from { opacity: 0; transform: translate3d(0, 6px, 0); }
+        to   { opacity: 1; transform: none; }
+    }
+
+    /* A hairline that draws itself in from the left. Used under section
+       headings, so a panel reads as being ruled off rather than as having a
+       border that was always there. */
+    .obx-rule {
+        transform-origin: left;
+        animation: obx-rule 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    @keyframes obx-rule {
+        from { transform: scaleX(0); }
+        to   { transform: scaleX(1); }
     }
 
     /* Rows entering a list stagger very slightly, so a refresh reads as

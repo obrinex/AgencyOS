@@ -5,6 +5,8 @@ import Sidebar, { MobileNav } from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import CommandPalette from "@/components/CommandPalette";
 import AIAssistant from "@/components/AIAssistant";
+import { PageTransition } from "@/components/motion";
+import { installSound } from "@/lib/sound";
 
 export default function AppLayout() {
   const { pathname } = useLocation();
@@ -26,6 +28,12 @@ export default function AppLayout() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // One delegated listener for the whole application. Nothing below had to be
+  // edited to gain click feedback, and nothing below can break it. Silent
+  // until switched on in Settings — see lib/sound.js for why it defaults off
+  // here and on for the website.
+  useEffect(() => installSound(), []);
 
   const openAssistant = ({ mode = "general", prompt = "", suggestions } = {}) => {
     setAssistantMode(mode);
@@ -51,7 +59,11 @@ export default function AppLayout() {
               state forever otherwise, so navigating away from a broken page
               would carry the error with you. */}
           <ErrorBoundary key={pathname}>
-            <Outlet context={{ openAssistant }} />
+            {/* Keyed on the route, so each navigation replays the entrance
+                rather than the new page appearing in place. */}
+            <PageTransition routeKey={pathname}>
+              <Outlet context={{ openAssistant }} />
+            </PageTransition>
           </ErrorBoundary>
         </main>
       </div>

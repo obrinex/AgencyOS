@@ -105,22 +105,50 @@ function NavItem({ item, collapsed = false, indented = false, onNavigate }) {
       title={collapsed ? item.label : undefined}
       className={({ isActive }) =>
         cn(
-          "group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm relative",
-          "transition-colors duration-150",
+          "group relative flex items-center gap-3 overflow-hidden rounded-lg px-2.5 py-2 text-sm",
+          // Transform as well as colour: the label shifts a couple of pixels
+          // toward the pointer, which is the sidebar's version of the site's
+          // magnetic controls — enough to feel responsive, far too little to
+          // make anything move under your cursor.
+          "transition-[color,background-color] duration-200",
           indented && !collapsed && "ml-3",
           isActive
             ? "bg-surface-2 text-foreground"
-            : "text-ash hover:bg-surface-1 hover:text-foreground"
+            : "text-ash hover:bg-surface-1 hover:text-foreground",
         )
       }
     >
       {({ isActive }) => (
         <>
-          {isActive && (
-            <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-foreground" />
+          {/* The active marker grows from the centre rather than appearing.
+              scaleY on a positioned hairline animates on the compositor, so
+              this costs nothing even with thirty links mounted. */}
+          <span
+            aria-hidden
+            className={cn(
+              "absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-foreground",
+              "origin-center transition-transform duration-300 ease-out",
+              isActive ? "scale-y-100" : "scale-y-0",
+            )}
+          />
+          {/* A very faint wash that sweeps in from the left on hover. This is
+              the one place the site's gradient language survives in the tool. */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-white/[0.06] to-transparent transition-transform duration-500 ease-out group-hover:translate-x-0"
+          />
+          <item.icon
+            className={cn(
+              "relative h-4 w-4 shrink-0 transition-transform duration-300 ease-out",
+              "group-hover:scale-110",
+              isActive && "text-foreground",
+            )}
+          />
+          {!collapsed && (
+            <span className="relative truncate transition-transform duration-300 ease-out group-hover:translate-x-0.5">
+              {item.label}
+            </span>
           )}
-          <item.icon className="h-4 w-4 shrink-0" />
-          {!collapsed && <span className="truncate">{item.label}</span>}
         </>
       )}
     </NavLink>
@@ -140,14 +168,17 @@ export default function Sidebar() {
         collapsed ? "w-[68px]" : "w-[240px]"
       )}
     >
-      <div className="flex h-16 items-center gap-2 px-4 border-b border-white/10">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background font-display font-bold text-sm shrink-0">
+      {/* The mark spins slowly on hover — the same rotating O the website uses
+          in OBR<em>I</em>NEX and BO<em>O</em>K A CALL. One shared gesture, and
+          the only decorative motion in the whole sidebar. */}
+      <div className="group flex h-16 items-center gap-2 px-4 border-b border-white/10">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground font-display text-sm font-bold text-background transition-transform duration-[1200ms] ease-out group-hover:rotate-[360deg]">
           O
         </div>
         {!collapsed && (
-          <div className="flex flex-col leading-none overflow-hidden">
-            <span className="font-display font-bold text-sm tracking-tight">AgencyOS</span>
-            <span className="font-mono text-[10px] text-graphite tracking-wide">OBRINEX</span>
+          <div className="flex flex-col overflow-hidden leading-none">
+            <span className="font-display text-sm font-bold tracking-tight">AgencyOS</span>
+            <span className="font-mono text-[10px] tracking-[0.18em] text-graphite">OBRINEX</span>
           </div>
         )}
       </div>
@@ -156,7 +187,15 @@ export default function Sidebar() {
         {sections.map((section) => (
           <div key={section.label}>
             {!collapsed && (
-              <p className="px-2.5 mb-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-carbon">{section.label}</p>
+              // Section labels sit against a hairline rather than floating.
+              // It is the ledger-rule device from the site's Circle section,
+              // and it turns seven loose groups into a structured list.
+              <div className="mb-2 flex items-center gap-2 px-2.5">
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-carbon">
+                  {section.label}
+                </p>
+                <span aria-hidden className="h-px flex-1 bg-white/[0.07]" />
+              </div>
             )}
             <div className="space-y-0.5">
               {section.items.map((item) => (

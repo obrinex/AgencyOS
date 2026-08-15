@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { STAGE_CONFIG } from "@/lib/statusConfig";
+import { Reveal, CountUp } from "@/components/motion";
 import { formatMoney } from "@/lib/currency";
 import { formatDistanceToNow, format } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
@@ -39,16 +40,35 @@ const EMPTY_FINANCE = {
   revenue_by_month: [],
 };
 
-function KpiCard({ icon: Icon, label, value, sub, testId }) {
+/**
+ * A KPI.
+ *
+ * `count` + `format` counts the figure up; `value` renders a string as-is.
+ * The distinction matters: counting is worth it on a number someone is meant to
+ * register, and is noise on a label. Every card here is the former, which is
+ * exactly the case the effect exists for.
+ *
+ * `index` staggers the entrance by 25ms a card — eight of them arrive in
+ * sequence in a fifth of a second, which reads as the dashboard assembling
+ * rather than as eight boxes appearing at once.
+ */
+function KpiCard({ icon: Icon, label, value, count, format, sub, testId, index = 0 }) {
   return (
-    <Card data-testid={testId} className="p-5 border-white/10 bg-surface-1 hover:border-white/20 transition-colors">
-      <div className="flex items-center justify-between mb-3">
-        <span className="font-mono text-[11px] uppercase tracking-[0.15em] text-graphite">{label}</span>
-        <Icon className="h-4 w-4 text-graphite" />
-      </div>
-      <p className="font-display text-2xl font-bold tracking-tight">{value}</p>
-      {sub && <p className="mt-1 text-xs text-ash">{sub}</p>}
-    </Card>
+    <Reveal delay={index * 25}>
+      <Card
+        data-testid={testId}
+        className="group p-5 border-white/10 bg-surface-1 hover:border-white/25 transition-colors"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <span className="font-mono text-[11px] uppercase tracking-[0.15em] text-graphite">{label}</span>
+          <Icon className="h-4 w-4 text-graphite transition-colors group-hover:text-ash" />
+        </div>
+        <p className="font-display text-2xl font-bold tracking-tight">
+          {count === undefined ? value : <CountUp value={count} format={format} />}
+        </p>
+        {sub && <p className="mt-1 text-xs text-ash">{sub}</p>}
+      </Card>
+    </Reveal>
   );
 }
 
@@ -99,14 +119,14 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-revenue" icon={DollarSign} label="Revenue" value={formatMoney(stats.revenue)} sub="Total paid to date" />
-        <KpiCard testId="kpi-mrr" icon={TrendingUp} label="MRR" value={formatMoney(stats.mrr)} sub="Monthly recurring" />
-        <KpiCard testId="kpi-arr" icon={TrendingUp} label="ARR" value={formatMoney(stats.arr)} sub="Annualized" />
-        <KpiCard testId="kpi-profit" icon={Wallet} label="Profit" value={formatMoney(stats.profit)} sub={`Expenses: ${formatMoney(stats.expenses)}`} />
-        <KpiCard testId="kpi-outstanding" icon={AlertTriangle} label="Outstanding" value={formatMoney(stats.outstanding)} sub="Unpaid invoices" />
-        <KpiCard testId="kpi-pipeline" icon={Layers} label="Pipeline Value" value={formatMoney(stats.pipeline_value)} sub={`${stats.total_leads} leads`} />
-        <KpiCard testId="kpi-conversion" icon={Percent} label="Lead Conversion" value={`${stats.conversion_rate}%`} sub="Won vs closed" />
-        <KpiCard testId="kpi-avg-deal" icon={Target} label="Avg Deal Size" value={formatMoney(stats.avg_deal_size)} sub="Per won deal" />
+        <KpiCard index={0} testId="kpi-revenue" icon={DollarSign} label="Revenue" count={stats.revenue} format={formatMoney} sub="Total paid to date" />
+        <KpiCard index={1} testId="kpi-mrr" icon={TrendingUp} label="MRR" count={stats.mrr} format={formatMoney} sub="Monthly recurring" />
+        <KpiCard index={2} testId="kpi-arr" icon={TrendingUp} label="ARR" count={stats.arr} format={formatMoney} sub="Annualized" />
+        <KpiCard index={3} testId="kpi-profit" icon={Wallet} label="Profit" count={stats.profit} format={formatMoney} sub={`Expenses: ${formatMoney(stats.expenses)}`} />
+        <KpiCard index={4} testId="kpi-outstanding" icon={AlertTriangle} label="Outstanding" count={stats.outstanding} format={formatMoney} sub="Unpaid invoices" />
+        <KpiCard index={5} testId="kpi-pipeline" icon={Layers} label="Pipeline Value" count={stats.pipeline_value} format={formatMoney} sub={`${stats.total_leads} leads`} />
+        <KpiCard index={6} testId="kpi-conversion" icon={Percent} label="Lead Conversion" count={stats.conversion_rate} format={(n) => `${n}%`} sub="Won vs closed" />
+        <KpiCard index={7} testId="kpi-avg-deal" icon={Target} label="Avg Deal Size" count={stats.avg_deal_size} format={formatMoney} sub="Per won deal" />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">

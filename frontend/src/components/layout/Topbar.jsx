@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
-import { Search, Bell, Sparkles, LogOut, Settings as SettingsIcon, Menu } from "lucide-react";
+import {
+  Search, Bell, Sparkles, LogOut, Settings as SettingsIcon, Menu,
+  Volume2, VolumeX,
+} from "lucide-react";
+import { loadSoundPref, setSoundEnabled } from "@/lib/sound";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
@@ -17,6 +21,10 @@ export default function Topbar({ onOpenCommandPalette, onOpenAssistant, onOpenMo
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  // Read once on mount rather than kept in a context: it is one boolean, it
+  // lives in localStorage, and nothing else in the app needs to react to it.
+  const [sound, setSound] = useState(false);
+  useEffect(() => setSound(loadSoundPref()), []);
 
   const loadNotifications = async () => {
     try {
@@ -131,6 +139,23 @@ export default function Topbar({ onOpenCommandPalette, onOpenAssistant, onOpenMo
               <Badge variant="outline" className="mt-1 font-mono text-[10px] uppercase">{user?.role}</Badge>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {/* A personal preference, not a company one — so it lives here
+                rather than in Settings, which is org-level. `onSelect` is
+                prevented so switching it does not close the menu: the whole
+                point is hearing the click it turns on. */}
+            <DropdownMenuItem
+              data-testid="user-menu-sound"
+              onSelect={(e) => {
+                e.preventDefault();
+                setSound(setSoundEnabled(!sound));
+              }}
+            >
+              {sound ? <Volume2 className="h-4 w-4 mr-2" /> : <VolumeX className="h-4 w-4 mr-2" />}
+              Interface sound
+              <span className="ml-auto font-mono text-[10px] uppercase text-graphite">
+                {sound ? "On" : "Off"}
+              </span>
+            </DropdownMenuItem>
             <DropdownMenuItem data-testid="user-menu-settings" onClick={() => navigate("/settings")}>
               <SettingsIcon className="h-4 w-4 mr-2" /> Settings
             </DropdownMenuItem>
