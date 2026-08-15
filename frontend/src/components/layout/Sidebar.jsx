@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import {
-  BarChart3, BookOpen, Building2, CalendarDays, CheckSquare, ChevronsLeft, ChevronsRight, DollarSign, FileSignature, FileText, FolderKanban, FolderOpen, HelpCircle, KanbanSquare, LayoutDashboard, LifeBuoy, Link2, Lock, Mail, MessageSquare, Receipt, Settings, Sparkles, StickyNote, Users, Zap,
+  BarChart3, BookOpen, Gem, Building2, CalendarDays, CheckSquare, ChevronsLeft, ChevronsRight, DollarSign, FileSignature, FileText, FolderKanban, FolderOpen, HelpCircle, KanbanSquare, LayoutDashboard, LifeBuoy, Link2, Lock, Mail, MessageSquare, Receipt, Settings, Sparkles, StickyNote, Users, Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -21,9 +21,19 @@ export const NAV_SECTIONS = [
       // one-shot search - and losing the link with the group it happened to
       // sit in would have hidden a working feature.
       { to: "/lead-finder", module: "crm", label: "Lead Finder", icon: Sparkles, testId: "nav-lead-finder" },
-      { to: "/founding", module: "crm", label: "Founding Circle", icon: Users, testId: "nav-founding" },
       { to: "/emails", module: "emails", label: "Emails", icon: Mail, testId: "nav-emails" },
       { to: "/proposals", module: "documents", label: "Proposals", icon: FileText, testId: "nav-proposals" },
+    ],
+  },
+  {
+    // Its own section rather than a link under Sales. Ten seats and a private
+    // room is not a pipeline stage, and burying it in a list of eight made it
+    // read like one.
+    label: "Founding Circle",
+    items: [
+      { to: "/founding", module: "crm", label: "Applications", icon: FileText, testId: "nav-founding" },
+      { to: "/founding/members", module: "crm", label: "Members", icon: Gem, testId: "nav-founding-members" },
+      { to: "/founding/community", module: "crm", label: "Community", icon: MessageSquare, testId: "nav-founding-community" },
     ],
   },
   {

@@ -3,6 +3,7 @@ import { Users, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import SeatRail from "@/components/founding/SeatRail";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,6 +97,8 @@ export default function FoundingReview() {
         title="Founding Circle"
         description={`Round ${overview.round} · ${overview.received}/${overview.application_cap} applications · ${overview.seats_remaining} of ${overview.seats_total} seats left`}
       />
+
+      <SeatRail taken={overview.approved} total={overview.seats_total} />
 
       <div className="grid gap-3 sm:grid-cols-4">
         {[

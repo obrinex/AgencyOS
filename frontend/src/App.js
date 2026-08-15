@@ -10,6 +10,8 @@ import Login from "@/pages/Login";
 import FoundingAccept from "@/pages/founding/FoundingAccept";
 import FoundingPortal from "@/pages/founding/FoundingPortal";
 import FoundingReview from "@/pages/founding/FoundingReview";
+import FoundingMembers from "@/pages/founding/FoundingMembers";
+import FoundingCommunity from "@/pages/founding/FoundingCommunity";
 import Dashboard from "@/pages/Dashboard";
 import CRMPipeline from "@/pages/crm/CRMPipeline";
 import LeadDetail from "@/pages/crm/LeadDetail";
@@ -98,6 +100,8 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/crm" element={<CRMPipeline />} />
               <Route path="/founding" element={<FoundingReview />} />
+              <Route path="/founding/members" element={<FoundingMembers />} />
+              <Route path="/founding/community" element={<FoundingCommunity />} />
               <Route path="/lead-finder" element={<LeadFinder />} />
               <Route path="/crm/:id" element={<LeadDetail />} />
               <Route path="/contacts" element={<Contacts />} />

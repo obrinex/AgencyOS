@@ -274,6 +274,10 @@ class Decision(BaseModel):
     note: Optional[str] = Field(default=None, max_length=1000)
 
 
+class AccessChange(BaseModel):
+    active: bool
+
+
 @router.post("/founding/applications/{application_id}/decide")
 async def decide(application_id: str, payload: Decision, request: Request,
                  user: dict = Depends(require_admin)):
@@ -332,16 +336,122 @@ async def decide(application_id: str, payload: Decision, request: Request,
 
 @router.get("/founding/members")
 async def list_members(user: dict = Depends(require_staff)):
-    """The circle. Staff-only - there is no public equivalent of this."""
+    """The circle. Staff-only - there is no public equivalent of this.
+
+    `access` is the state of their portal login, which is a different question
+    from whether they hold a seat:
+
+    - `pending`  - approved, invite not yet accepted, no login exists
+    - `active`   - they can sign in
+    - `revoked`  - the login is disabled, the seat is still theirs
+    """
     rows = await db[APPLICATIONS].find({"status": founding.APPROVED}).to_list(100)
-    return [
-        {"id": str(r["_id"]), "name": r.get("name"), "email": r.get("email"),
-         "company": (r.get("answers") or {}).get("company"),
-         "joined_at": r.get("decided_at"),
-         "activated": bool(r.get("invite_used_at")),
-         "score": (r.get("score") or {}).get("total")}
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        portal_user = None
+        if r.get("portal_user_id"):
+            portal_user = await db.users.find_one({"_id": to_object_id(r["portal_user_id"])})
+        if not portal_user:
+            access = "pending"
+        else:
+            access = "active" if portal_user.get("is_active", True) else "revoked"
+        out.append({
+            "id": str(r["_id"]), "name": r.get("name"), "email": r.get("email"),
+            "company": (r.get("answers") or {}).get("company"),
+            "joined_at": r.get("decided_at"),
+            "access": access,
+            "score": (r.get("score") or {}).get("total"),
+        })
+    out.sort(key=lambda m: m.get("joined_at") or "")
+    return out
+
+
+@router.post("/founding/members/{application_id}/access")
+async def set_member_access(application_id: str, payload: "AccessChange",
+                            request: Request, user: dict = Depends(require_admin)):
+    """Turn a member's portal login on or off without touching their seat.
+
+    Revoking is `is_active = False` on the user row rather than a deletion:
+    `get_current_user` already refuses an inactive user, so the next request
+    fails and existing sessions die with it. Deleting the row instead would
+    take their chat authorship with it and make restoring them a re-invite.
+
+    The seat is untouched either way. Someone who has lost access is still one
+    of the ten - use the remove endpoint if the intent is to free the seat.
+    """
+    doc = await db[APPLICATIONS].find_one({"_id": to_object_id(application_id),
+                                           "status": founding.APPROVED})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if not doc.get("portal_user_id"):
+        raise HTTPException(
+            status_code=409,
+            detail="They haven't accepted their invite yet, so there is no login to change.")
+
+    await db.users.update_one({"_id": to_object_id(doc["portal_user_id"])},
+                              {"$set": {"is_active": payload.active}})
+    await log_audit(user["id"],
+                    f"founding_access_{'granted' if payload.active else 'revoked'}",
+                    "founding_member", application_id, request)
+    return {"access": "active" if payload.active else "revoked"}
+
+
+@router.post("/founding/members/{application_id}/remove")
+async def remove_member(application_id: str, request: Request,
+                        user: dict = Depends(require_admin)):
+    """Take back a seat.
+
+    Distinct from revoking access, and the heavier of the two: this frees one
+    of the ten for someone else. The application drops back to rejected so the
+    seat count - which counts approved applications - is correct, and the login
+    goes with it.
+    """
+    doc = await db[APPLICATIONS].find_one({"_id": to_object_id(application_id),
+                                           "status": founding.APPROVED})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    if doc.get("portal_user_id"):
+        await db.users.delete_one({"_id": to_object_id(doc["portal_user_id"])})
+    await db[APPLICATIONS].update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"status": founding.REJECTED, "portal_user_id": None,
+                  "invite_token": None,
+                  "removed_at": _now(), "removed_by": user["id"]}},
+    )
+    await log_audit(user["id"], "founding_member_removed", "founding_member",
+                    application_id, request)
+    return {"removed": True,
+            "seats_remaining": founding.seats_remaining(await _approved_count())}
+
+
+@router.post("/founding/members/{application_id}/reinvite")
+async def reinvite_member(application_id: str, user: dict = Depends(require_admin)):
+    """Mint a fresh invite for someone whose link expired in an inbox.
+
+    Replaces the old token rather than adding one, so a forwarded original
+    stops working the moment a replacement is issued.
+    """
+    doc = await db[APPLICATIONS].find_one({"_id": to_object_id(application_id),
+                                           "status": founding.APPROVED})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if doc.get("portal_user_id"):
+        raise HTTPException(status_code=409,
+                            detail="They already have an account. Use access instead.")
+
+    token = secrets.token_urlsafe(32)
+    await db[APPLICATIONS].update_one({"_id": doc["_id"]},
+                                      {"$set": {"invite_token": token,
+                                                "invite_used_at": None}})
+    sent = True
+    try:
+        from email_service import send_founding_approved_email
+        await send_founding_approved_email(doc["email"], doc["name"], token)
+    except Exception:
+        sent = False
+        logger.exception("Founding re-invite email failed for %s", doc["email"])
+    return {"email_sent": sent}
 
 
 # --- Public: accepting the invite ---------------------------------------------
@@ -419,26 +529,42 @@ class ChatPost(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
 
 
+#: The community room is open to members and to staff. Staff are in it because
+#: the circle is the agency's own room - a host who cannot speak in their own
+#: community is not hosting it. Everyone else, including clients, is refused by
+#: exact role match.
+require_circle = require_roles(FOUNDING_ROLE, "admin", "team_member")
+
+
+async def _author(user: dict) -> dict:
+    """Who a chat message is from.
+
+    Staff post as the house rather than under a personal name: a member should
+    be able to tell at a glance whether they are hearing from another founder
+    or from Obrinex, and a first name in a ten-person room does not carry that.
+    """
+    if user["role"] in ("admin", "team_member"):
+        return {"author_name": "Obrinex", "author_company": None, "is_host": True}
+    doc = await _member(user)
+    return {"author_name": doc.get("name"),
+            "author_company": (doc.get("answers") or {}).get("company"),
+            "is_host": False}
+
+
 @router.get("/founding/chat")
-async def read_chat(limit: int = 100, user: dict = Depends(require_founding)):
+async def read_chat(limit: int = 100, user: dict = Depends(require_circle)):
     """One shared room for the circle. Members see each other here - a community
     where nobody knows who they are talking to is not a community. What stays
     private is that the membership is never published outside this room."""
-    await _member(user)
+    await _author(user)
     rows = await db[CHAT].find({}).sort("created_at", -1).to_list(min(limit, 300))
     return serialize_list(list(reversed(rows)))
 
 
 @router.post("/founding/chat")
-async def post_chat(payload: ChatPost, user: dict = Depends(require_founding)):
-    doc = await _member(user)
-    message = {
-        "author_id": user["id"],
-        "author_name": doc.get("name"),
-        "author_company": (doc.get("answers") or {}).get("company"),
-        "body": payload.body.strip(),
-        "created_at": _now(),
-    }
+async def post_chat(payload: ChatPost, user: dict = Depends(require_circle)):
+    message = {"author_id": user["id"], **await _author(user),
+               "body": payload.body.strip(), "created_at": _now()}
     result = await db[CHAT].insert_one(message)
     return serialize_doc(await db[CHAT].find_one({"_id": result.inserted_id}))
 

@@ -274,12 +274,17 @@ def test_deciding_a_seat_is_admin_only():
 
 def test_the_member_portal_does_not_accept_clients():
     """A founding member is not a client and must not inherit the client
-    portal's routes. Exact role match in both directions."""
+    portal's routes. Exact role match in both directions.
+
+    The assistant and the membership record are members-only: staff do not get
+    a personal assistant thread, and there is no membership to read for them.
+    The community room is wider on purpose - see the test below.
+    """
     from routers import founding as router
 
     assert router.FOUNDING_ROLE == "founding"
     assert router.FOUNDING_ROLE != "client"
-    for name in ("read_chat", "post_chat", "assistant_ask", "my_membership"):
+    for name in ("assistant_ask", "assistant_history", "my_membership"):
         route = next(r for r in router.router.routes
                      if getattr(r, "name", None) == name)
         assert router.require_founding in [d.call for d in route.dependant.dependencies], name
@@ -361,3 +366,119 @@ async def test_a_failed_decision_email_still_records_the_decision(db, monkeypatc
     assert result["email_sent"] is False
     after = await db[router.APPLICATIONS].find_one({"_id": doc["_id"]})
     assert after["status"] == founding.REJECTED
+
+
+# --- Member access control ----------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_revoking_access_keeps_the_seat(db):
+    """Revoke and remove are different powers. Revoking suspends the login;
+    the seat stays theirs until it is explicitly returned."""
+    from routers import founding as router
+
+    await _apply(email="member@example.com")
+    doc = await db[router.APPLICATIONS].find_one({"email": "member@example.com"})
+    await router.decide(str(doc["_id"]), router.Decision(decision="approved"),
+                        request=None, user=ADMIN)
+    approved = await db[router.APPLICATIONS].find_one({"_id": doc["_id"]})
+    await router.accept_invite(
+        router.AcceptInvite(token=approved["invite_token"], password="a-long-password"),
+        request=None)
+
+    before = await db[router.APPLICATIONS].count_documents({"status": founding.APPROVED})
+    await router.set_member_access(str(doc["_id"]), router.AccessChange(active=False),
+                                   request=None, user=ADMIN)
+
+    user_row = await db.users.find_one({"email": "member@example.com"})
+    assert user_row["is_active"] is False
+    assert await db[router.APPLICATIONS].count_documents({"status": founding.APPROVED}) == before
+
+    members = await router.list_members(user=ADMIN)
+    assert members[0]["access"] == "revoked"
+
+    await router.set_member_access(str(doc["_id"]), router.AccessChange(active=True),
+                                   request=None, user=ADMIN)
+    assert (await router.list_members(user=ADMIN))[0]["access"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_removing_a_member_returns_the_seat(db):
+    from routers import founding as router
+
+    await _apply(email="leaving@example.com")
+    doc = await db[router.APPLICATIONS].find_one({"email": "leaving@example.com"})
+    await router.decide(str(doc["_id"]), router.Decision(decision="approved"),
+                        request=None, user=ADMIN)
+    assert founding.seats_remaining(await router._approved_count()) == 9
+
+    result = await router.remove_member(str(doc["_id"]), request=None, user=ADMIN)
+    assert result["seats_remaining"] == 10
+    assert await db.users.find_one({"email": "leaving@example.com"}) is None
+
+
+@pytest.mark.asyncio
+async def test_access_cannot_be_changed_before_the_invite_is_accepted(db):
+    """There is no login to enable or disable yet, and pretending otherwise
+    would report success while changing nothing."""
+    from fastapi import HTTPException
+    from routers import founding as router
+
+    await _apply(email="notyet@example.com")
+    doc = await db[router.APPLICATIONS].find_one({"email": "notyet@example.com"})
+    await router.decide(str(doc["_id"]), router.Decision(decision="approved"),
+                        request=None, user=ADMIN)
+
+    with pytest.raises(HTTPException) as exc:
+        await router.set_member_access(str(doc["_id"]), router.AccessChange(active=False),
+                                       request=None, user=ADMIN)
+    assert exc.value.status_code == 409
+    assert (await router.list_members(user=ADMIN))[0]["access"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_a_reinvite_invalidates_the_previous_link(db):
+    """Otherwise a forwarded original keeps working alongside the replacement."""
+    from routers import founding as router
+
+    await _apply(email="lost@example.com")
+    doc = await db[router.APPLICATIONS].find_one({"email": "lost@example.com"})
+    await router.decide(str(doc["_id"]), router.Decision(decision="approved"),
+                        request=None, user=ADMIN)
+    first = (await db[router.APPLICATIONS].find_one({"_id": doc["_id"]}))["invite_token"]
+
+    await router.reinvite_member(str(doc["_id"]), user=ADMIN)
+    second = (await db[router.APPLICATIONS].find_one({"_id": doc["_id"]}))["invite_token"]
+    assert second and second != first
+
+
+def test_managing_members_is_admin_only():
+    from auth_utils import require_admin, require_staff
+    from routers import founding as router
+
+    for name in ("set_member_access", "remove_member", "reinvite_member"):
+        route = next(r for r in router.router.routes if getattr(r, "name", None) == name)
+        guards = [d.call for d in route.dependant.dependencies]
+        assert require_admin in guards, name
+        assert require_staff not in guards, name
+
+
+# --- The community room -------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_staff_post_as_the_house_not_under_their_own_name(db):
+    """A member must be able to tell a founder from the agency at a glance."""
+    from routers import founding as router
+
+    posted = await router.post_chat(router.ChatPost(body="Welcome, all."), user=ADMIN)
+    assert posted["author_name"] == "Obrinex"
+    assert posted["is_host"] is True
+
+
+def test_the_community_room_is_closed_to_clients():
+    """Members and staff only. A client role must not reach it."""
+    from routers import founding as router
+
+    for name in ("read_chat", "post_chat"):
+        route = next(r for r in router.router.routes if getattr(r, "name", None) == name)
+        assert router.require_circle in [d.call for d in route.dependant.dependencies], name
+    assert "client" not in router.require_circle.__closure__[0].cell_contents
