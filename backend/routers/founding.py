@@ -352,6 +352,91 @@ async def decide(application_id: str, payload: Decision, request: Request,
                 await _approved_in_round(doc.get("round")))}
 
 
+@router.delete("/founding/applications/{application_id}")
+async def delete_application(application_id: str, request: Request,
+                             user: dict = Depends(require_admin)):
+    """Erase an application for good.
+
+    Admin-only and a genuine hard delete, not a hidden flag. Two things need it
+    and both want the row actually gone: spam and test submissions, which
+    otherwise sit in the count forever and skew every intake number; and an
+    applicant asking to be erased, which a soft delete does not answer.
+
+    The audit entry carries the email, so the trail outlives the document it
+    describes - a log saying "admin deleted 6712a…" is not a record of anything
+    once the row it points at no longer exists.
+
+    ## Deleting a member takes their login with them
+
+    An approved application may have minted a portal account. Removing the
+    application and leaving the user behind would strand a `founding` login with
+    no membership record: it authenticates, resolves to nothing, and every
+    member endpoint 404s at someone who can still sign in. So the account goes
+    too, exactly as `remove_member` does it.
+
+    Deleting an approved application also frees its seat, because seats are
+    counted from approved documents rather than stored. That is a real
+    consequence and the UI says so before you confirm.
+
+    ## The round's counter is recomputed, not decremented
+
+    `rounds.received` decides when an intake closes on its cap. Subtracting one
+    would drift the moment anything else touched the collection; recounting is
+    the same query the submit path already runs and cannot drift.
+
+    An intake closed *by its cap* reopens if the deletion puts it back under -
+    which is the whole point of deleting spam from a full round. It stays shut
+    if the quarter ended, because that is not a fault a deletion can repair.
+    """
+    try:
+        oid = to_object_id(application_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    doc = await db[APPLICATIONS].find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if doc.get("portal_user_id"):
+        await db.users.delete_one({"_id": to_object_id(doc["portal_user_id"])})
+
+    await db[APPLICATIONS].delete_one({"_id": oid})
+
+    round_key = doc.get("round")
+    received = None
+    reopened = False
+    if round_key:
+        received = await db[APPLICATIONS].count_documents({"round": round_key})
+        update = {"received": received}
+        current = await db[ROUNDS].find_one({"key": round_key})
+        if (current
+                and current.get("status") == founding.ROUND_CLOSED
+                and current.get("closed_reason") == founding.CLOSED_BY_CAP
+                and received < founding.ROUND_APPLICATION_CAP
+                and round_key == founding.round_key()):
+            update.update({"status": founding.ROUND_OPEN, "closed_reason": None,
+                           "closed_at": None})
+            reopened = True
+        await db[ROUNDS].update_one({"key": round_key}, {"$set": update})
+
+    # Logged with the identifying detail rather than only the id, because the id
+    # now points at nothing.
+    await log_audit(user["id"], "founding_application_deleted", "founding_application",
+                    f"{application_id} ({doc.get('email')} · {doc.get('status')})",
+                    request)
+
+    return {
+        "deleted": True,
+        "was_status": doc.get("status"),
+        "had_account": bool(doc.get("portal_user_id")),
+        "round": round_key,
+        "received": received,
+        "round_reopened": reopened,
+        "seats_remaining": founding.seats_remaining(
+            await _approved_in_round(round_key)),
+    }
+
+
 @router.get("/founding/members")
 async def list_members(user: dict = Depends(require_staff)):
     """The circle. Staff-only - there is no public equivalent of this.

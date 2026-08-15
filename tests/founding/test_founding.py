@@ -514,3 +514,126 @@ def test_the_community_room_is_closed_to_clients():
         route = next(r for r in router.router.routes if getattr(r, "name", None) == name)
         assert router.require_circle in [d.call for d in route.dependant.dependencies], name
     assert "client" not in router.require_circle.__closure__[0].cell_contents
+
+
+# --- Deleting an application --------------------------------------------------
+
+def test_deleting_an_application_is_admin_only():
+    """Same bar as deciding one. A team member reviewing applications must not
+    be able to erase the evidence of one."""
+    import inspect
+    from routers import founding as router
+    from auth_utils import require_admin
+
+    dependency = inspect.signature(router.delete_application).parameters["user"].default
+    assert dependency.dependency is require_admin
+
+
+@pytest.mark.asyncio
+async def test_deleting_an_application_removes_the_row(db):
+    from routers import founding as router
+
+    await _apply(email="spam@example.com")
+    doc = await db[router.APPLICATIONS].find_one({"email": "spam@example.com"})
+
+    result = await router.delete_application(str(doc["_id"]), request=None, user=ADMIN)
+
+    assert result["deleted"] is True
+    assert await db[router.APPLICATIONS].find_one({"email": "spam@example.com"}) is None
+
+
+@pytest.mark.asyncio
+async def test_deleting_recounts_the_round_rather_than_decrementing(db):
+    """`received` decides when an intake closes on its cap, so it has to match
+    the collection - not a number nudged down by one and left to drift."""
+    from routers import founding as router
+
+    for n in range(3):
+        await _apply(email=f"r{n}@example.com")
+    doc = await db[router.APPLICATIONS].find_one({"email": "r1@example.com"})
+
+    result = await router.delete_application(str(doc["_id"]), request=None, user=ADMIN)
+
+    assert result["received"] == 2
+    stored = await db[router.ROUNDS].find_one({"key": founding.round_key()})
+    assert stored["received"] == 2
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_member_frees_the_seat_and_their_login(db):
+    """An approved application may hold a portal account. Deleting the row and
+    leaving the user would strand a login that resolves to no membership."""
+    from routers import founding as router
+
+    user_id = (await db.users.insert_one({"email": "member@example.com",
+                                          "role": "founding"})).inserted_id
+    await _apply(email="member@example.com")
+    doc = await db[router.APPLICATIONS].find_one({"email": "member@example.com"})
+    await db[router.APPLICATIONS].update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"status": founding.APPROVED, "portal_user_id": str(user_id)}})
+
+    assert await router._approved_in_round() == 1
+
+    result = await router.delete_application(str(doc["_id"]), request=None, user=ADMIN)
+
+    assert result["was_status"] == founding.APPROVED
+    assert result["had_account"] is True
+    assert result["seats_remaining"] == founding.SEATS_PER_INTAKE
+    assert await db.users.find_one({"_id": user_id}) is None
+
+
+@pytest.mark.asyncio
+async def test_deleting_reopens_an_intake_that_closed_on_its_cap(db):
+    """Clearing spam out of a full round is the reason to want this at all."""
+    from routers import founding as router
+
+    key = founding.round_key()
+    for n in range(founding.ROUND_APPLICATION_CAP):
+        await db[router.APPLICATIONS].insert_one(
+            {"round": key, "email": f"c{n}@example.com", "status": founding.PENDING})
+    await db[router.ROUNDS].insert_one(
+        {"key": key, "status": founding.ROUND_CLOSED,
+         "closed_reason": founding.CLOSED_BY_CAP,
+         "received": founding.ROUND_APPLICATION_CAP})
+    doc = await db[router.APPLICATIONS].find_one({"email": "c0@example.com"})
+
+    result = await router.delete_application(str(doc["_id"]), request=None, user=ADMIN)
+
+    assert result["round_reopened"] is True
+    stored = await db[router.ROUNDS].find_one({"key": key})
+    assert stored["status"] == founding.ROUND_OPEN
+    assert stored["closed_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_deleting_does_not_reopen_an_intake_whose_quarter_ended(db):
+    """A finished quarter is not a fault a deletion can repair."""
+    from routers import founding as router
+
+    old = "2026-Q1"
+    await db[router.APPLICATIONS].insert_one(
+        {"round": old, "email": "old@example.com", "status": founding.PENDING})
+    await db[router.ROUNDS].insert_one(
+        {"key": old, "status": founding.ROUND_CLOSED,
+         "closed_reason": founding.CLOSED_BY_QUARTER, "received": 1})
+    doc = await db[router.APPLICATIONS].find_one({"email": "old@example.com"})
+
+    result = await router.delete_application(str(doc["_id"]), request=None, user=ADMIN)
+
+    assert result["round_reopened"] is False
+    stored = await db[router.ROUNDS].find_one({"key": old})
+    assert stored["status"] == founding.ROUND_CLOSED
+
+
+@pytest.mark.asyncio
+async def test_deleting_something_that_is_not_there_is_a_404(db):
+    """Including a malformed id — `to_object_id` raises on those, and an
+    unhandled raise would be a 500 for what is plainly a not-found."""
+    from fastapi import HTTPException
+    from routers import founding as router
+
+    for bad in ("not-an-object-id", "6712aaaaaaaaaaaaaaaaaaaa"):
+        with pytest.raises(HTTPException) as exc:
+            await router.delete_application(bad, request=None, user=ADMIN)
+        assert exc.value.status_code == 404
