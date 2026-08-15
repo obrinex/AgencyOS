@@ -246,7 +246,7 @@ export function MobileNav({ open, onOpenChange }) {
       />
       <aside
         className={cn(
-          "absolute left-0 top-0 h-full w-[82vw] max-w-[320px] border-r border-white/10 bg-background transition-transform duration-200",
+          "absolute left-0 top-0 h-full w-[82vw] max-w-[320px] border-r border-white/10 bg-black/90 backdrop-blur-xl transition-transform duration-200",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >

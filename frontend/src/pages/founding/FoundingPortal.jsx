@@ -46,8 +46,8 @@ export default function FoundingPortal() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-white/10 px-6 py-4">
+    <div className="min-h-screen text-foreground">
+      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-black/50 px-6 py-4 backdrop-blur-xl">
         <div className="flex items-center gap-4">
           <div>
             <h1 className="font-display text-lg font-bold tracking-tight">Founding Circle</h1>
@@ -70,7 +70,9 @@ export default function FoundingPortal() {
               onClick={() => setTab(t.key)}
               data-testid={`founding-tab-${t.key}`}
               className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                tab === t.key ? "bg-surface-2 text-foreground" : "text-ash hover:bg-surface-1"
+                tab === t.key
+                  ? "bg-white/[0.09] text-foreground"
+                  : "text-ash hover:bg-white/[0.05] hover:text-foreground"
               }`}
             >
               <t.icon className="h-3.5 w-3.5" /> {t.label}

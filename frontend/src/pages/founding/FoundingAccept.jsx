@@ -37,7 +37,7 @@ export default function FoundingAccept() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6">
+    <div className="min-h-screen flex items-center justify-center p-6">
       <Card className="w-full max-w-md p-7 bg-surface-1 border-white/10" data-testid="founding-accept-page">
         {done ? (
           <div className="text-center space-y-4">

@@ -44,17 +44,17 @@ export default function PublicAgreement() {
   };
 
   if (notFound) {
-    return <div className="min-h-screen bg-background flex items-center justify-center p-6"><p className="text-graphite">This agreement doesn't exist or the link has expired.</p></div>;
+    return <div className="min-h-screen flex items-center justify-center p-6"><p className="text-graphite">This agreement doesn't exist or the link has expired.</p></div>;
   }
   if (!agreement) {
-    return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-graphite font-mono text-sm">Loading…</p></div>;
+    return <div className="min-h-screen flex items-center justify-center"><p className="text-graphite font-mono text-sm">Loading…</p></div>;
   }
 
   const signed = agreement.status === "signed";
   const symbol = agreement.currency || "INR";
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-6 flex justify-center" data-testid="public-agreement-page">
+    <div className="min-h-screen text-foreground p-6 flex justify-center" data-testid="public-agreement-page">
       <div className="max-w-2xl w-full">
         <div className="text-center mb-8 mt-6">
           <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background">

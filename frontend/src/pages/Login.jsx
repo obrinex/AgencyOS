@@ -59,7 +59,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-background px-4" data-testid="login-page">
+    <div className="flex min-h-screen w-full items-center justify-center px-4" data-testid="login-page">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-white/[0.03] blur-3xl" />
         <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-white/[0.03] blur-3xl" />

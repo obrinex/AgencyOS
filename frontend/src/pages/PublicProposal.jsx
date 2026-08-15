@@ -42,20 +42,20 @@ export default function PublicProposal() {
 
   if (notFound) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center text-center px-4" data-testid="public-proposal-not-found">
+      <div className="min-h-screen flex items-center justify-center text-center px-4" data-testid="public-proposal-not-found">
         <p className="text-graphite">This proposal link is invalid or has expired.</p>
       </div>
     );
   }
 
   if (!proposal) {
-    return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-graphite" /></div>;
+    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-graphite" /></div>;
   }
 
   const finalized = proposal.status === "accepted" || proposal.status === "rejected";
 
   return (
-    <div className="min-h-screen bg-background py-10 px-4" data-testid="public-proposal-page">
+    <div className="min-h-screen py-10 px-4" data-testid="public-proposal-page">
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center gap-2 mb-6">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background font-display font-bold text-sm">O</div>

@@ -104,7 +104,7 @@ export default function ManageMeeting() {
   };
 
   const shell = (children) => (
-    <div className="min-h-screen bg-background text-foreground p-6 flex justify-center">
+    <div className="min-h-screen text-foreground p-6 flex justify-center">
       <div className="max-w-lg w-full mt-8">{children}</div>
     </div>
   );
@@ -119,7 +119,7 @@ export default function ManageMeeting() {
   }
 
   if (!meeting) {
-    return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-graphite font-mono text-sm">Loading…</p></div>;
+    return <div className="min-h-screen flex items-center justify-center"><p className="text-graphite font-mono text-sm">Loading…</p></div>;
   }
 
   const whenLine = (

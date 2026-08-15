@@ -26,16 +26,16 @@ export default function PublicProject() {
   }, [token]);
 
   if (notFound) {
-    return <div className="min-h-screen bg-background flex items-center justify-center p-6"><p className="text-graphite">This status page doesn't exist or the link has expired.</p></div>;
+    return <div className="min-h-screen flex items-center justify-center p-6"><p className="text-graphite">This status page doesn't exist or the link has expired.</p></div>;
   }
   if (!project) {
-    return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-graphite font-mono text-sm">Loading…</p></div>;
+    return <div className="min-h-screen flex items-center justify-center"><p className="text-graphite font-mono text-sm">Loading…</p></div>;
   }
 
   const healthColor = { green: "text-success", yellow: "text-warning", red: "text-danger" }[project.health] || "text-success";
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-6 flex justify-center" data-testid="public-project-page">
+    <div className="min-h-screen text-foreground p-6 flex justify-center" data-testid="public-project-page">
       <div className="max-w-xl w-full">
         <div className="text-center mb-8 mt-6">
           <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background">

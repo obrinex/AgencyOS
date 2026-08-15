@@ -45,15 +45,15 @@ export default function LeadCapture() {
   };
 
   if (notFound) {
-    return <div className="min-h-screen bg-background flex items-center justify-center p-6"><p className="text-graphite">This form doesn't exist or has been disabled.</p></div>;
+    return <div className="min-h-screen flex items-center justify-center p-6"><p className="text-graphite">This form doesn't exist or has been disabled.</p></div>;
   }
   if (!info) {
-    return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-graphite font-mono text-sm">Loading…</p></div>;
+    return <div className="min-h-screen flex items-center justify-center"><p className="text-graphite font-mono text-sm">Loading…</p></div>;
   }
 
   if (done) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6" data-testid="leadform-done">
+      <div className="min-h-screen flex items-center justify-center p-6" data-testid="leadform-done">
         <Card className="max-w-md w-full p-8 bg-surface-1 border-white/10 text-center">
           <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-4" />
           <h1 className="font-display text-xl font-bold mb-2">Thanks, {form.name.split(" ")[0]}!</h1>
@@ -64,7 +64,7 @@ export default function LeadCapture() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-6 flex justify-center" data-testid="leadform-page">
+    <div className="min-h-screen text-foreground p-6 flex justify-center" data-testid="leadform-page">
       <div className="max-w-lg w-full">
         <div className="text-center mb-8 mt-6">
           <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background font-display font-bold">
