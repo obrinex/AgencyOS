@@ -19,7 +19,10 @@ export default function ProtectedRoute({ children, roles }) {
   }
 
   if (roles && !roles.includes(user.role)) {
-    return <Navigate to={user.role === "client" ? "/portal" : "/dashboard"} replace />;
+    // Each role has exactly one home. A founding member is not a client and
+    // must not be bounced into the client portal.
+    const home = { client: "/portal", founding: "/founding-portal" }[user.role] || "/dashboard";
+    return <Navigate to={home} replace />;
   }
 
   return children;

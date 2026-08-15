@@ -110,6 +110,9 @@ async def create_indexes():
     from suppression import create_suppression_indexes
     await create_suppression_indexes()
 
+    from routers.founding import create_founding_indexes
+    await create_founding_indexes()
+
 
 async def next_counter(name: str) -> int:
     doc = await db.counters.find_one_and_update(

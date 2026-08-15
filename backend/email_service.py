@@ -397,3 +397,66 @@ async def send_meeting_rescheduled_email(to_email: str, name: str, title: str,
       <tr><td style="font-size:14px;color:#B5B5BC;padding-top:16px;">The invite has been updated. If the new time doesn't work, reply and we'll sort it out.</td></tr>
     """)
     return await send_email(to_email, f"Rescheduled: {title or 'your meeting'}", html)
+
+
+# --- Founding Circle ----------------------------------------------------------
+#
+# Every applicant hears back, including the ones who did not get in. A silent
+# rejection is the default failure of every application process and it is the
+# one thing an applicant remembers.
+
+async def send_founding_approved_email(to_email: str, name: str, invite_token: str):
+    """Approval. Carries a set-your-own-password link rather than a password.
+
+    Nobody emails a working credential that then sits in an inbox forever. The
+    token is single-use and the member chooses the password themselves.
+    """
+    link = f"{FRONTEND_URL}/founding/accept/{invite_token}"
+    html = await _wrapper(f"""
+      <tr><td style="font-size:20px;font-weight:700;padding-bottom:12px;">You're in, {name}</td></tr>
+      <tr><td style="font-size:14px;color:#B5B5BC;padding-bottom:20px;">
+        You've been offered one of the ten Founding Circle seats. Set your password
+        below and your portal is ready — community chat, your assistant, and
+        everything else in there.
+      </td></tr>
+      <tr><td style="padding-top:4px;"><a href="{link}" style="background:#F4F4F5;color:#131315;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">Set your password</a></td></tr>
+      <tr><td style="font-size:12px;color:#85858C;padding-top:18px;">
+        This link is single-use. Membership is not announced publicly — who is in
+        the circle stays between the people in it.
+      </td></tr>
+    """)
+    return await send_email(to_email, "Your Founding Circle seat", html)
+
+
+async def send_founding_rejected_email(to_email: str, name: str):
+    """A decline that says the actual thing: ten seats, more applicants.
+
+    No score, no ranking, no feedback promised that will not be given. Telling
+    someone their number is an invitation to argue with arithmetic that was
+    never the whole decision.
+    """
+    html = await _wrapper(f"""
+      <tr><td style="font-size:20px;font-weight:700;padding-bottom:12px;">About your Founding Circle application</td></tr>
+      <tr><td style="font-size:14px;color:#B5B5BC;padding-bottom:16px;">
+        Thanks for applying, {name}. We had far more applications than the ten
+        seats available this round, and yours isn't one we're taking forward.
+      </td></tr>
+      <tr><td style="font-size:14px;color:#B5B5BC;">
+        That's a decision about fit and timing for a very small group — not a
+        verdict on your work. Applications reopen on the 1st of next month and
+        you're welcome to apply again.
+      </td></tr>
+    """)
+    return await send_email(to_email, "Your Founding Circle application", html)
+
+
+async def send_founding_received_email(to_email: str, name: str):
+    """Acknowledgement, so nobody wonders whether the form worked."""
+    html = await _wrapper(f"""
+      <tr><td style="font-size:20px;font-weight:700;padding-bottom:12px;">Application received, {name}</td></tr>
+      <tr><td style="font-size:14px;color:#B5B5BC;">
+        We've got it. This round closes at the end of the month or once it's full,
+        and every applicant hears back by the 30th either way.
+      </td></tr>
+    """)
+    return await send_email(to_email, "We've got your Founding Circle application", html)

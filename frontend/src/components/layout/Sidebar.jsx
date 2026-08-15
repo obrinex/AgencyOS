@@ -21,6 +21,7 @@ export const NAV_SECTIONS = [
       // one-shot search - and losing the link with the group it happened to
       // sit in would have hidden a working feature.
       { to: "/lead-finder", module: "crm", label: "Lead Finder", icon: Sparkles, testId: "nav-lead-finder" },
+      { to: "/founding", module: "crm", label: "Founding Circle", icon: Users, testId: "nav-founding" },
       { to: "/emails", module: "emails", label: "Emails", icon: Mail, testId: "nav-emails" },
       { to: "/proposals", module: "documents", label: "Proposals", icon: FileText, testId: "nav-proposals" },
     ],

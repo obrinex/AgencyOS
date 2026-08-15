@@ -7,6 +7,9 @@ import AppLayout from "@/components/layout/AppLayout";
 import PortalLayout from "@/components/layout/PortalLayout";
 
 import Login from "@/pages/Login";
+import FoundingAccept from "@/pages/founding/FoundingAccept";
+import FoundingPortal from "@/pages/founding/FoundingPortal";
+import FoundingReview from "@/pages/founding/FoundingReview";
 import Dashboard from "@/pages/Dashboard";
 import CRMPipeline from "@/pages/crm/CRMPipeline";
 import LeadDetail from "@/pages/crm/LeadDetail";
@@ -72,6 +75,18 @@ function App() {
             <Route path="/start/:slug" element={<LeadCapture />} />
             <Route path="/status/:token" element={<PublicProject />} />
             <Route path="/pay/:token" element={<PayInvoice />} />
+            <Route path="/founding/accept/:token" element={<FoundingAccept />} />
+
+            {/* The Founding Circle portal is its own tree, outside AppLayout —
+                members do not get the staff sidebar or the client portal. */}
+            <Route
+              path="/founding-portal"
+              element={
+                <ProtectedRoute roles={["founding"]}>
+                  <FoundingPortal />
+                </ProtectedRoute>
+              }
+            />
 
             <Route
               element={
@@ -82,6 +97,7 @@ function App() {
             >
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/crm" element={<CRMPipeline />} />
+              <Route path="/founding" element={<FoundingReview />} />
               <Route path="/lead-finder" element={<LeadFinder />} />
               <Route path="/crm/:id" element={<LeadDetail />} />
               <Route path="/contacts" element={<Contacts />} />
