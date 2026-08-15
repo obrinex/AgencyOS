@@ -4,6 +4,7 @@ Serves ONLY the curated legal documents. Content prefers the owner's dashboard
 edit (kb_articles by seed_key) and falls back to the bundled file, so a
 lawyer-reviewed edit in the Knowledge Base shows here without a deploy.
 """
+import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth_utils import get_current_user
 from database import db
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/policies", tags=["policies"])
 
 # `backend/legal/`, not the agent knowledge base. These eleven documents used
@@ -48,7 +50,30 @@ async def _content(entry: dict) -> str:
     if os.path.exists(path):
         with open(path, encoding="utf-8") as fh:
             return fh.read()
+    # Nothing in the database and nothing on disk. Serverless bundlers trace
+    # Python imports, and these are markdown that nothing imports - so a
+    # missing file here means the deployment did not ship `backend/legal/`
+    # (see `includeFiles` in vercel.json). Say so, rather than returning an
+    # empty string that renders as a blank Terms page nobody notices.
+    logger.error("Policy file missing from the deployment: %s", path)
     return ""
+
+
+@router.get("/_health")
+async def policies_health(user: dict = Depends(get_current_user)):
+    """Which policy documents are actually reachable in this deployment.
+
+    Exists because the failure mode is silent: a policy whose file was not
+    bundled and has no database override returns empty and looks like an
+    unwritten page rather than a broken deploy.
+    """
+    return {
+        "source_dir": _DIR,
+        "missing_files": [
+            p["file"] for p in POLICIES
+            if not os.path.exists(os.path.join(_DIR, p["file"]))
+        ],
+    }
 
 
 @router.get("")
