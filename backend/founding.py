@@ -20,18 +20,41 @@ The score does not decide anything. It orders a list; every seat is your call.
 
 ## The two caps are different things
 
-`ROUND_APPLICATION_CAP` (100) limits how many applications a monthly round
-accepts before it closes itself - a workload ceiling, so that reviewing a round
-stays a finite job. `TOTAL_SEATS` (10) limits how many people are ever in the
-circle. A round can fill with 100 applicants and produce zero members.
+`ROUND_APPLICATION_CAP` (100) limits how many applications one intake accepts
+before it closes itself - a workload ceiling, so that reviewing an intake stays
+a finite job. `SEATS_PER_INTAKE` (10) limits how many of them get in. An intake
+can fill with 100 applicants and produce zero members.
+
+## Intakes are quarterly
+
+One intake per quarter, ten seats each. The round key is `YYYY-Qn` and is
+derived from the calendar rather than stored, so an intake cannot fail to open
+because a scheduled job did not run - the worst a missing job can do is
+nothing at all.
+
+Ten seats *per intake* means membership accumulates: forty after a year of
+full intakes. That is a deliberate reading of "ten intakes every quarter" and
+the one place this module would change if the intent were a circle that is
+only ever ten deep - see `SEATS_PER_INTAKE`.
 """
 
 from datetime import datetime, timezone
 
-#: Seats in the circle, ever. The eleventh approval is refused, not queued.
-TOTAL_SEATS = 10
+#: Seats in one quarterly intake. The eleventh approval *in a quarter* is
+#: refused, not queued.
+#:
+#: This is a per-intake number, not a lifetime one. The circle takes ten each
+#: quarter, so membership accumulates: forty people after a year of full
+#: intakes. If the intent is instead a circle that is only ever ten people
+#: deep, this constant stays as it is and `approved_in_round` in the router
+#: becomes a count of all approvals rather than the current round's — one line,
+#: and the tests name which behaviour is in force.
+SEATS_PER_INTAKE = 10
 
-#: Applications one monthly round accepts before closing itself.
+#: Kept as an alias so nothing that imported the old name breaks silently.
+TOTAL_SEATS = SEATS_PER_INTAKE
+
+#: Applications one quarterly intake accepts before closing itself.
 ROUND_APPLICATION_CAP = 100
 
 # --- Status ------------------------------------------------------------------
@@ -47,6 +70,10 @@ ROUND_OPEN = "open"
 ROUND_CLOSED = "closed"
 
 CLOSED_BY_CAP = "cap_reached"
+CLOSED_BY_QUARTER = "quarter_ended"
+
+#: The old name, kept so stored rows written before intakes went quarterly
+#: still render a reason rather than a blank.
 CLOSED_BY_MONTH = "month_ended"
 
 
@@ -234,32 +261,53 @@ def total_score(answers: dict, ratings: dict | None = None) -> dict:
 
 # --- Rounds -------------------------------------------------------------------
 
+def quarter_of(month: int) -> int:
+    return (month - 1) // 3 + 1
+
+
 def round_key(now: datetime | None = None) -> str:
-    """The round an application submitted now belongs to: 'YYYY-MM'."""
+    """The intake an application submitted now belongs to: 'YYYY-Qn'.
+
+    Derived from the calendar rather than stored, so an intake cannot fail to
+    open because a scheduled job did not run. Q1 is Jan-Mar.
+    """
     moment = now or datetime.now(timezone.utc)
-    return f"{moment.year:04d}-{moment.month:02d}"
+    return f"{moment.year:04d}-Q{quarter_of(moment.month)}"
+
+
+def quarter_months(key: str) -> tuple:
+    """The three month numbers in an intake, for display. ('2026-Q3' -> (7,8,9))"""
+    quarter = int(key.split("-Q")[1])
+    first = (quarter - 1) * 3 + 1
+    return (first, first + 1, first + 2)
 
 
 def should_close(received: int, round_status: str,
                  current_round: str, submitted_round: str) -> str | None:
-    """Why this round should close, or None if it should stay open.
+    """Why this intake should close, or None if it should stay open.
 
-    Two independent reasons. The cap keeps a round reviewable; the month
-    boundary keeps the cycle honest, so an under-subscribed round does not stay
-    open into the next one and quietly become a two-month round.
+    Two independent reasons. The cap keeps an intake reviewable; the quarter
+    boundary keeps the cycle honest, so an under-subscribed intake does not
+    stay open into the next one and quietly become a six-month intake.
     """
     if round_status == ROUND_CLOSED:
         return None
     if submitted_round != current_round:
-        return CLOSED_BY_MONTH
+        return CLOSED_BY_QUARTER
     if received >= ROUND_APPLICATION_CAP:
         return CLOSED_BY_CAP
     return None
 
 
-def seats_remaining(approved_count: int) -> int:
-    return max(0, TOTAL_SEATS - approved_count)
+def seats_remaining(approved_in_round: int) -> int:
+    """Seats left in the current intake.
+
+    Takes the count for *this quarter*, not the lifetime total - ten seats
+    open again each quarter. Pass the lifetime count instead and this becomes
+    a fixed-size circle without any other change.
+    """
+    return max(0, SEATS_PER_INTAKE - approved_in_round)
 
 
-def can_approve(approved_count: int) -> bool:
-    return seats_remaining(approved_count) > 0
+def can_approve(approved_in_round: int) -> bool:
+    return seats_remaining(approved_in_round) > 0

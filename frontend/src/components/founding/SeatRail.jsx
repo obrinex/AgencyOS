@@ -5,7 +5,9 @@
  *  rather than a progress bar — a bar reads as completion, and a filling bar
  *  says "nearly done" where this needs to say "nearly gone".
  */
-export default function SeatRail({ taken = 0, total = 10, className = "" }) {
+export default function SeatRail({
+  taken = 0, total = 10, label = "This intake", totalMembers = null, className = "",
+}) {
   const filled = Math.max(0, Math.min(taken, total));
   const open = total - filled;
 
@@ -14,10 +16,17 @@ export default function SeatRail({ taken = 0, total = 10, className = "" }) {
          data-testid="founding-seat-rail">
       <div className="flex items-baseline justify-between gap-4">
         <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-carbon">
-          The Circle
+          {label}
         </p>
         <p className="font-mono text-[11px] text-graphite" data-testid="founding-seat-count">
           {filled} taken · {open} open
+          {/* The lifetime figure sits beside the intake one because they are
+              different numbers and the rail only draws the intake. Without it,
+              ten filled marks reads as "the circle is full" when it means
+              "this quarter is". */}
+          {totalMembers !== null && (
+            <span className="text-carbon"> · {totalMembers} in the circle</span>
+          )}
         </p>
       </div>
 
@@ -34,12 +43,12 @@ export default function SeatRail({ taken = 0, total = 10, className = "" }) {
         ))}
       </div>
 
-      <p className="sr-only">{filled} of {total} founding seats taken.</p>
+      <p className="sr-only">{filled} of {total} seats taken in {label}.</p>
 
       <p className="mt-3 text-xs text-carbon">
         {open === 0
-          ? "Every seat is taken. Returning one frees it for the next round."
-          : `${open} ${open === 1 ? "seat remains" : "seats remain"}. Membership is never announced publicly.`}
+          ? "This intake is full. Ten seats open again next quarter."
+          : `${open} ${open === 1 ? "seat remains" : "seats remain"} this quarter. Membership is never announced publicly.`}
       </p>
     </div>
   );

@@ -147,9 +147,10 @@ async def test_the_eleventh_approval_is_refused(db):
     from fastapi import HTTPException
     from routers import founding as router
 
-    for n in range(founding.TOTAL_SEATS):
+    for n in range(founding.SEATS_PER_INTAKE):
         await db[router.APPLICATIONS].insert_one(
-            {"status": founding.APPROVED, "email": f"in{n}@example.com"})
+            {"status": founding.APPROVED, "round": founding.round_key(),
+             "email": f"in{n}@example.com"})
     await _apply(email="eleventh@example.com")
     doc = await db[router.APPLICATIONS].find_one({"email": "eleventh@example.com"})
 
@@ -157,22 +158,53 @@ async def test_the_eleventh_approval_is_refused(db):
         await router.decide(str(doc["_id"]), router.Decision(decision="approved"),
                             request=None, user=ADMIN)
     assert exc.value.status_code == 409
-    assert "seats are taken" in exc.value.detail
+    assert "seats in this intake are" in exc.value.detail
 
 
 # --- Rounds -------------------------------------------------------------------
 
 def test_a_round_closes_when_it_fills():
-    assert founding.should_close(100, founding.ROUND_OPEN, "2026-08", "2026-08") \
+    assert founding.should_close(100, founding.ROUND_OPEN, "2026-Q3", "2026-Q3") \
         == founding.CLOSED_BY_CAP
-    assert founding.should_close(99, founding.ROUND_OPEN, "2026-08", "2026-08") is None
+    assert founding.should_close(99, founding.ROUND_OPEN, "2026-Q3", "2026-Q3") is None
 
 
-def test_a_round_closes_when_its_month_ends():
-    """An under-subscribed round must not roll into the next one and quietly
-    become a two-month round."""
-    assert founding.should_close(4, founding.ROUND_OPEN, "2026-09", "2026-08") \
-        == founding.CLOSED_BY_MONTH
+def test_an_intake_closes_when_its_quarter_ends():
+    """An under-subscribed intake must not roll into the next one and quietly
+    become a six-month intake."""
+    assert founding.should_close(4, founding.ROUND_OPEN, "2026-Q4", "2026-Q3") \
+        == founding.CLOSED_BY_QUARTER
+
+
+def test_intakes_are_quarterly():
+    from datetime import datetime, timezone
+
+    assert founding.round_key(datetime(2026, 1, 5, tzinfo=timezone.utc)) == "2026-Q1"
+    assert founding.round_key(datetime(2026, 8, 14, tzinfo=timezone.utc)) == "2026-Q3"
+    assert founding.round_key(datetime(2026, 12, 31, tzinfo=timezone.utc)) == "2026-Q4"
+    assert founding.quarter_months("2026-Q3") == (7, 8, 9)
+
+
+@pytest.mark.asyncio
+async def test_seats_reopen_each_quarter(db):
+    """Ten seats per intake, not ten ever. A full previous quarter must not
+    block this one - that is the whole point of a quarterly intake."""
+    from routers import founding as router
+
+    for n in range(founding.SEATS_PER_INTAKE):
+        await db[router.APPLICATIONS].insert_one(
+            {"status": founding.APPROVED, "round": "2025-Q1",
+             "email": f"old{n}@example.com"})
+
+    assert await router._total_members() == 10
+    assert await router._approved_in_round(founding.round_key()) == 0
+
+    await _apply(email="thisquarter@example.com")
+    doc = await db[router.APPLICATIONS].find_one({"email": "thisquarter@example.com"})
+    result = await router.decide(str(doc["_id"]), router.Decision(decision="approved"),
+                                 request=None, user=ADMIN)
+    assert result["status"] == founding.APPROVED
+    assert result["seats_remaining"] == 9
 
 
 @pytest.mark.asyncio
@@ -409,7 +441,7 @@ async def test_removing_a_member_returns_the_seat(db):
     doc = await db[router.APPLICATIONS].find_one({"email": "leaving@example.com"})
     await router.decide(str(doc["_id"]), router.Decision(decision="approved"),
                         request=None, user=ADMIN)
-    assert founding.seats_remaining(await router._approved_count()) == 9
+    assert founding.seats_remaining(await router._approved_in_round()) == 9
 
     result = await router.remove_member(str(doc["_id"]), request=None, user=ADMIN)
     assert result["seats_remaining"] == 10

@@ -86,7 +86,18 @@ async def _current_round(create: bool = False) -> dict:
     return await db[ROUNDS].find_one({"key": key})
 
 
-async def _approved_count() -> int:
+async def _approved_in_round(round_key: str | None = None) -> int:
+    """Approvals in one intake - what the ten seats are counted against.
+
+    Seats reset each quarter, so the cap is per intake. `_total_members` is the
+    lifetime figure and is reported separately; conflating the two would either
+    cap the circle at ten forever or never cap an intake at all.
+    """
+    return await db[APPLICATIONS].count_documents(
+        {"status": founding.APPROVED, "round": round_key or founding.round_key()})
+
+
+async def _total_members() -> int:
     return await db[APPLICATIONS].count_documents({"status": founding.APPROVED})
 
 
@@ -120,8 +131,8 @@ async def public_form():
         "round": current["key"],
         "questions": founding.QUESTIONS,
         "band_labels": founding.BAND_LABELS,
-        "closes": "when the round fills or at the end of the month",
-        "decision_by": "the 30th",
+        "closes": "when the intake fills or at the end of the quarter",
+        "decision_by": "the end of the quarter",
     }
 
 
@@ -148,7 +159,7 @@ async def public_apply(payload: ApplicationSubmit, request: Request):
     if current["status"] == founding.ROUND_CLOSED:
         raise HTTPException(
             status_code=409,
-            detail="Applications for this round are closed. The next round opens on the 1st.",
+            detail="This intake is closed. The next one opens at the start of the quarter.",
         )
 
     problems = founding.validate_answers(payload.answers)
@@ -201,18 +212,23 @@ async def public_apply(payload: ApplicationSubmit, request: Request):
 @router.get("/founding/overview")
 async def overview(user: dict = Depends(require_staff)):
     current = await _current_round()
-    approved = await _approved_count()
+    key = current["key"]
+    approved_this_intake = await _approved_in_round(key)
     return {
-        "round": current["key"],
+        "round": key,
+        "round_label": f"Q{key.split('-Q')[1]} {key.split('-')[0]}",
         "round_status": current.get("status", founding.ROUND_OPEN),
         "closed_reason": current.get("closed_reason"),
-        "received": await db[APPLICATIONS].count_documents({"round": current["key"]}),
+        "received": await db[APPLICATIONS].count_documents({"round": key}),
         "application_cap": founding.ROUND_APPLICATION_CAP,
-        "pending": await db[APPLICATIONS].count_documents({"status": founding.PENDING}),
-        "approved": approved,
-        "rejected": await db[APPLICATIONS].count_documents({"status": founding.REJECTED}),
-        "seats_total": founding.TOTAL_SEATS,
-        "seats_remaining": founding.seats_remaining(approved),
+        "pending": await db[APPLICATIONS].count_documents(
+            {"status": founding.PENDING, "round": key}),
+        "approved": approved_this_intake,
+        "rejected": await db[APPLICATIONS].count_documents(
+            {"status": founding.REJECTED, "round": key}),
+        "seats_total": founding.SEATS_PER_INTAKE,
+        "seats_remaining": founding.seats_remaining(approved_this_intake),
+        "total_members": await _total_members(),
         "score_max": founding.TOTAL_MAX,
     }
 
@@ -301,10 +317,11 @@ async def decide(application_id: str, payload: Decision, request: Request,
     invite_token = None
 
     if approving:
-        if not founding.can_approve(await _approved_count()):
+        if not founding.can_approve(await _approved_in_round(doc.get("round"))):
             raise HTTPException(
                 status_code=409,
-                detail=f"All {founding.TOTAL_SEATS} seats are taken. Remove a member first.")
+                detail=(f"All {founding.SEATS_PER_INTAKE} seats in this intake are "
+                        f"taken. The next intake opens next quarter."))
         invite_token = secrets.token_urlsafe(32)
 
     await db[APPLICATIONS].update_one(
@@ -331,7 +348,8 @@ async def decide(application_id: str, payload: Decision, request: Request,
     await log_audit(user["id"], f"founding_{payload.decision}", "founding_application",
                     application_id, request)
     return {"status": payload.decision, "email_sent": email_sent,
-            "seats_remaining": founding.seats_remaining(await _approved_count())}
+            "seats_remaining": founding.seats_remaining(
+                await _approved_in_round(doc.get("round")))}
 
 
 @router.get("/founding/members")
@@ -422,7 +440,8 @@ async def remove_member(application_id: str, request: Request,
     await log_audit(user["id"], "founding_member_removed", "founding_member",
                     application_id, request)
     return {"removed": True,
-            "seats_remaining": founding.seats_remaining(await _approved_count())}
+            "seats_remaining": founding.seats_remaining(
+                await _approved_in_round(doc.get("round")))}
 
 
 @router.post("/founding/members/{application_id}/reinvite")
@@ -520,8 +539,8 @@ async def my_membership(user: dict = Depends(require_founding)):
         "name": doc.get("name"),
         "company": (doc.get("answers") or {}).get("company"),
         "joined_at": doc.get("decided_at"),
-        "seats_total": founding.TOTAL_SEATS,
-        "members": await _approved_count(),
+        "seats_total": founding.SEATS_PER_INTAKE,
+        "members": await _total_members(),
     }
 
 

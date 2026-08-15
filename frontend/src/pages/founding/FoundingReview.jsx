@@ -95,17 +95,18 @@ export default function FoundingReview() {
     <div className="p-6 space-y-5" data-testid="founding-review-page">
       <PageHeader
         title="Founding Circle"
-        description={`Round ${overview.round} · ${overview.received}/${overview.application_cap} applications · ${overview.seats_remaining} of ${overview.seats_total} seats left`}
+        description={`${overview.round_label} intake · ${overview.received}/${overview.application_cap} applications · ${overview.seats_remaining} of ${overview.seats_total} seats left`}
       />
 
-      <SeatRail taken={overview.approved} total={overview.seats_total} />
+      <SeatRail taken={overview.approved} total={overview.seats_total}
+                label={`${overview.round_label} intake`} totalMembers={overview.total_members} />
 
       <div className="grid gap-3 sm:grid-cols-4">
         {[
           { label: "Seats left", value: overview.seats_remaining, testId: "founding-seats" },
           { label: "Pending", value: overview.pending, testId: "founding-pending" },
           { label: "Approved", value: overview.approved, testId: "founding-approved" },
-          { label: "Round", value: overview.round_status === "open" ? "Open" : "Closed", testId: "founding-round-status" },
+          { label: "Intake", value: overview.round_status === "open" ? "Open" : "Closed", testId: "founding-round-status" },
         ].map((s) => (
           <Card key={s.label} className="p-4 bg-surface-1 border-white/10" data-testid={s.testId}>
             <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-graphite">{s.label}</p>
@@ -116,8 +117,8 @@ export default function FoundingReview() {
 
       {overview.round_status !== "open" && (
         <Card className="p-3 bg-surface-1 border-warning/30 text-sm text-graphite">
-          This round is closed ({overview.closed_reason === "cap_reached" ? "it filled up" : "the month ended"}).
-          The next round opens on the 1st.
+          This intake is closed ({overview.closed_reason === "cap_reached" ? "it filled up" : "the quarter ended"}).
+          The next one opens at the start of the quarter.
         </Card>
       )}
 
@@ -215,7 +216,7 @@ export default function FoundingReview() {
                   <Button
                     onClick={() => decide("approved")}
                     disabled={busy || overview.seats_remaining === 0}
-                    title={overview.seats_remaining === 0 ? "All ten seats are taken" : undefined}
+                    title={overview.seats_remaining === 0 ? "This intake is full — the next opens next quarter" : undefined}
                     data-testid="founding-approve"
                     className="gap-1.5"
                   >

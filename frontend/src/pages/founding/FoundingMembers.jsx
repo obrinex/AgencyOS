@@ -48,7 +48,7 @@ export default function FoundingMembers() {
   };
 
   const confirmRemove = async () => {
-    await act(removing, "remove", {}, (d) => `Seat returned. ${d.seats_remaining} of ${overview.seats_total} open.`);
+    await act(removing, "remove", {}, (d) => `Seat returned. ${d.seats_remaining} of ${overview.seats_total} open this intake.`);
     setRemoving(null);
     setConfirmText("");
   };
@@ -61,10 +61,11 @@ export default function FoundingMembers() {
     <div className="p-6 space-y-6" data-testid="founding-members-page">
       <PageHeader
         title="Members"
-        description="Ten seats. Access is yours to give and take back."
+        description="Ten seats each quarter. Access is yours to give and take back."
       />
 
-      <SeatRail taken={overview.approved} total={overview.seats_total} />
+      <SeatRail taken={overview.approved} total={overview.seats_total}
+                label={`${overview.round_label} intake`} totalMembers={overview.total_members} />
 
       {members.length === 0 && (
         <Card className="p-10 bg-surface-1 border-white/10 text-center">
