@@ -501,7 +501,10 @@ h1, h2, h3 {
        accent — the front page is the brandmark's page, and the brand is
        monochrome. The body grey is applied inline where it is used rather than
        as a class, so there is no rule here that nothing references. */
-    .obx-site-muted { color: hsl(var(--carbon)); }
+    /* Lifted off carbon. At 10px with 0.1em tracking, carbon (~4.5:1) is
+       technically passing and practically unreadable — these are the section
+       labels, and they were the text that disappeared. */
+    .obx-site-muted { color: hsl(var(--graphite)); }
 
     /* No ground of its own. The app already mounts `DarkGradientBg fixed
        accent="cyan"` once at the root of App.js, outside the Router, so it is
@@ -516,6 +519,44 @@ h1, h2, h3 {
     .lenis.lenis-smooth { scroll-behavior: auto !important; }
     .lenis.lenis-stopped { overflow: hidden; }
 
+    /* ── The grid ──────────────────────────────────────────────────────────
+       obrinex.space's check field, measured off the live site: 1px hairlines
+       at rgba(255,255,255,0.055) on an 84px cell. It runs the whole page rather
+       than just the hero — the site fades it down the document, so this does
+       too, staying present to the foot instead of stopping dead.
+
+       Fixed, so it belongs to the viewport and does not slide under long
+       content. Behind everything, in front of the app's ground. */
+    .obx-grid {
+        position: fixed;
+        inset: 0;
+        z-index: -9;
+        pointer-events: none;
+        background-image:
+            linear-gradient(to right, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+            linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+        background-size: 84px 84px;
+        -webkit-mask-image: linear-gradient(rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.55) 55%, rgba(0, 0, 0, 0.4) 100%);
+        mask-image: linear-gradient(rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.55) 55%, rgba(0, 0, 0, 0.4) 100%);
+    }
+
+    /* The hero's brighter pass, the way the site doubles it up there: a wider
+       cell at higher contrast, masked to a dome so it dissolves before it
+       reaches the copy. */
+    .obx-grid-hero {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0.35;
+        background-image:
+            linear-gradient(to right, rgba(255, 255, 255, 0.14) 1px, transparent 1px),
+            linear-gradient(rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+        background-size: 96px 80px;
+        -webkit-mask-image: radial-gradient(78% 48% at 50% 0%, #000 62%, transparent 112%);
+        mask-image: radial-gradient(78% 48% at 50% 0%, #000 62%, transparent 112%);
+    }
+
     /* ── The brandmark ─────────────────────────────────────────────────────
        The signature "O", turning like a wheel. Lifted from obrinex.space's
        hero so the product's front page and the marketing site open the same
@@ -527,6 +568,44 @@ h1, h2, h3 {
     .obx-wheel {
         display: inline-block;
         animation: obx-spin 8s linear infinite;
+    }
+
+    /* ── The grid ──────────────────────────────────────────────────────────
+       obrinex.space's check field, measured off the live site: 1px hairlines
+       at rgba(255,255,255,0.055) on an 84px cell. It runs the whole page rather
+       than just the hero — the site fades it down the document, so this does
+       too, staying present to the foot instead of stopping dead.
+
+       Fixed, so it belongs to the viewport and does not slide under long
+       content. Behind everything, in front of the app's ground. */
+    .obx-grid {
+        position: fixed;
+        inset: 0;
+        z-index: -9;
+        pointer-events: none;
+        background-image:
+            linear-gradient(to right, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+            linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+        background-size: 84px 84px;
+        -webkit-mask-image: linear-gradient(rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.55) 55%, rgba(0, 0, 0, 0.4) 100%);
+        mask-image: linear-gradient(rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.55) 55%, rgba(0, 0, 0, 0.4) 100%);
+    }
+
+    /* The hero's brighter pass, the way the site doubles it up there: a wider
+       cell at higher contrast, masked to a dome so it dissolves before it
+       reaches the copy. */
+    .obx-grid-hero {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0.35;
+        background-image:
+            linear-gradient(to right, rgba(255, 255, 255, 0.14) 1px, transparent 1px),
+            linear-gradient(rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+        background-size: 96px 80px;
+        -webkit-mask-image: radial-gradient(78% 48% at 50% 0%, #000 62%, transparent 112%);
+        mask-image: radial-gradient(78% 48% at 50% 0%, #000 62%, transparent 112%);
     }
 
     /* ── The brandmark ─────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import PortalAssistant from "@/components/portal/PortalAssistant";
 
 import Login from "@/pages/Login";
 import Landing from "@/pages/Landing";
+import PublicPolicies from "@/pages/PublicPolicies";
 import FoundingAccept from "@/pages/founding/FoundingAccept";
 import FoundingPortal from "@/pages/founding/FoundingPortal";
 import FoundingReview from "@/pages/founding/FoundingReview";
@@ -85,6 +86,10 @@ function App() {
                 straight to the password box, so a client following a link from an
                 invoice met a login form with nothing saying what it belonged to. */}
             <Route path="/" element={<Landing />} />
+            {/* Legal documents, readable without an account — the people who
+                need the terms are the ones deciding whether to sign up. */}
+            <Route path="/policies" element={<PublicPolicies />} />
+            <Route path="/policies/:slug" element={<PublicPolicies />} />
             <Route path="/login" element={<Login />} />
             <Route path="/proposal/:token" element={<PublicProposal />} />
             <Route path="/book/:slug" element={<BookMeeting />} />

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useSmoothScroll, useScrolledPast, AnimatedTextIn, Rise } from "@/components/site/SiteMotion";
 import HalftoneTrail from "@/components/site/HalftoneTrail";
 import SiteCursor, { CursorField } from "@/components/site/SiteCursor";
+import SiteFooter from "@/components/site/SiteFooter";
 import {
   ArrowRight, LayoutDashboard, Users, Receipt, FolderKanban, FileSignature,
   MessageSquare, LifeBuoy, Sparkles, Mail, Gem, Briefcase,
@@ -145,7 +146,7 @@ const Reveal = Rise;
 
 function Eyebrow({ children }) {
   return (
-    <p className="obx-site-mono obx-site-muted text-[10px] sm:text-[11px]">{children}</p>
+    <p className="obx-site-mono text-graphite text-[10px] sm:text-[11px]">{children}</p>
   );
 }
 
@@ -200,6 +201,9 @@ export default function Landing() {
           this page — the CRM behind it keeps the ordinary pointer. */}
       <SiteCursor />
       <CursorField />
+      {/* obrinex.space's check field, across the whole page rather than just
+          the hero. */}
+      <div aria-hidden className="obx-grid" />
 
 
       {/* ── Nav ──────────────────────────────────────────────────────────── */}
@@ -218,7 +222,7 @@ export default function Landing() {
           <Link to="/" className="obx-site-display text-[15px] tracking-[-0.02em] text-white">
             OBRINEX
           </Link>
-          <span className="obx-site-mono obx-site-muted hidden text-[10px] sm:block">CRM</span>
+          <span className="obx-site-mono text-graphite hidden text-[10px] sm:block">CRM</span>
 
           <nav className="ml-auto hidden items-center gap-8 lg:flex">
             {NAV.map((n) => (
@@ -269,9 +273,11 @@ export default function Landing() {
           The lockup opens the page: it is the first thing in the flow and the
           section is exactly one screen tall, so it is never scrolled to. */}
       <section className="relative flex min-h-[100svh] flex-col items-center justify-center overflow-hidden px-6 text-center">
+        {/* The hero doubles the grid, the way the site does. */}
+        <div aria-hidden className="obx-grid-hero" />
+
         {/* The halftone trail from obrinex.space/join: a dot grid that lights
-            under the cursor and decays behind it. Replaces a dot globe that was
-            not what was being asked for. */}
+            under the cursor and decays behind it. */}
         <HalftoneTrail />
 
         <motion.div
@@ -289,7 +295,7 @@ export default function Landing() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1.2, delay: 0.5, ease: EASE }}
-          className="obx-site-mono obx-site-muted mt-8 text-[10px] sm:text-[11px]"
+          className="obx-site-mono text-graphite mt-8 text-[10px] sm:text-[11px]"
         >
           The agency operating system
         </motion.p>
@@ -348,7 +354,7 @@ export default function Landing() {
                 <h3 className="obx-site-display mt-6 text-[19px] leading-snug text-white">
                   {p.title}
                 </h3>
-                <p className="mt-3 text-[14px] leading-[1.75] text-graphite">{p.body}</p>
+                <p className="mt-3 text-[14px] leading-[1.75] text-ash">{p.body}</p>
               </article>
             </Reveal>
           ))}
@@ -366,7 +372,7 @@ export default function Landing() {
               <div className="obx-glass obx-lift obx-sheen group h-full rounded-2xl p-5">
                 <m.icon className="h-4 w-4 text-primary transition-transform duration-500 group-hover:scale-110" strokeWidth={1.5} />
                 <p className="mt-5 text-[15px] text-white">{m.name}</p>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-graphite">{m.note}</p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-ash">{m.note}</p>
               </div>
             </Reveal>
           ))}
@@ -385,7 +391,7 @@ export default function Landing() {
                 <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/25">
                   <p.icon className="h-5 w-5" strokeWidth={1.4} />
                 </span>
-                <p className="obx-site-mono obx-site-muted mt-6 text-[10px]">{p.kicker}</p>
+                <p className="obx-site-mono text-graphite mt-6 text-[10px]">{p.kicker}</p>
                 <h3 className="obx-site-display mt-2 text-[26px] text-white">{p.title}</h3>
 
                 <ul className="mt-7 space-y-3.5">
@@ -421,7 +427,7 @@ export default function Landing() {
               <Heading className="max-w-[14ch]">Not another CRM with your logo on it.</Heading>
             </Reveal>
             <Reveal delay={0.16}>
-              <p className="mt-6 max-w-[38ch] text-[15px] leading-[1.8] text-graphite">
+              <p className="mt-6 max-w-[38ch] text-[15px] leading-[1.8] text-ash">
                 It was built to run one agency properly, then made general enough to run
                 yours. That is why the finance is real, the permissions are enforced by
                 the API rather than by hiding buttons, and the emails look like they came
@@ -429,7 +435,7 @@ export default function Landing() {
               </p>
             </Reveal>
             <Reveal delay={0.24}>
-              <p className="obx-site-mono mt-8 text-[10px] leading-[2] text-carbon">
+              <p className="obx-site-mono mt-8 text-[11px] leading-[2] text-graphite">
                 Five things it does differently &rarr;
               </p>
             </Reveal>
@@ -462,7 +468,7 @@ export default function Landing() {
           </Heading>
         </Reveal>
         <Reveal delay={0.12}>
-          <p className="mx-auto mt-5 max-w-[46ch] text-[15px] leading-[1.8] text-graphite">
+          <p className="mx-auto mt-5 max-w-[46ch] text-[15px] leading-[1.8] text-ash">
             Give them somewhere to look instead — live project progress, invoices they
             can pay, contracts they can sign, and a direct line to you.
           </p>
@@ -484,24 +490,15 @@ export default function Landing() {
           </div>
         </Reveal>
         <Reveal delay={0.3}>
-          <p className="obx-site-mono mt-8 text-[10px] leading-[2] text-carbon">
+          <p className="obx-site-mono mt-8 text-[11px] leading-[2] text-graphite">
             Already inside? Both doors take you to your own portal.
           </p>
         </Reveal>
         </div>
       </Section>
 
-      {/* ── Footer ───────────────────────────────────────────────────────── */}
-      <footer className="border-t border-white/[0.07]">
-        <div className={`${SHELL} flex flex-col items-center justify-between gap-5 py-10 sm:flex-row`}>
-          <p className="obx-site-mono obx-site-muted text-[10px]">Obrinex CRM · Est. 2026</p>
-          <div className="obx-site-mono flex items-center gap-8 text-[10px] text-graphite">
-            <a href="https://obrinex.space" target="_blank" rel="noopener noreferrer"
-               className="transition-colors duration-300 hover:text-white">obrinex.space</a>
-            <Link to="/login" className="transition-colors duration-300 hover:text-white">Sign in</Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
+
     </div>
   );
 }

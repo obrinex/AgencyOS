@@ -92,6 +92,7 @@ app.include_router(emails.router)
 app.include_router(payment_links.router)
 app.include_router(chat.router)
 app.include_router(policies.router)
+app.include_router(policies.public_router)
 app.include_router(me.router)
 app.include_router(founding.router)
 

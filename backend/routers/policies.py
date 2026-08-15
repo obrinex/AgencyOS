@@ -88,3 +88,26 @@ async def get_policy(slug: str, user: dict = Depends(get_current_user)):
     if not entry:
         raise HTTPException(status_code=404, detail="Policy not found")
     return {"slug": slug, "title": entry["title"], "content": await _content(entry)}
+
+
+# --- Public --------------------------------------------------------------------
+#
+# These are legal documents. They exist to be read by people deciding whether to
+# work with us, which is exactly the audience that does not have a login — a
+# terms page behind authentication is a terms page nobody can check before they
+# agree to it. Read-only, no user context, same content as the signed-in routes.
+
+public_router = APIRouter(prefix="/api/public/policies", tags=["policies"])
+
+
+@public_router.get("")
+async def public_list_policies():
+    return [{"slug": p["slug"], "title": p["title"]} for p in POLICIES]
+
+
+@public_router.get("/{slug}")
+async def public_get_policy(slug: str):
+    entry = _BY_SLUG.get(slug)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    return {"slug": slug, "title": entry["title"], "content": await _content(entry)}
