@@ -66,10 +66,14 @@ module.exports = {
         graphite: 'hsl(var(--graphite))',
         ash: 'hsl(var(--ash))'
       },
+      // The website's exact three families. Archivo carries headings, Manrope
+      // carries body copy, IBM Plex Mono carries labels and figures. Archivo
+      // was doing all three jobs here, which is why dense pages read as
+      // shouty: it is a display face and it has no quiet register.
       fontFamily: {
         display: ['Archivo', 'sans-serif'],
-        sans: ['Archivo', 'sans-serif'],
-        mono: ['"Space Mono"', 'monospace']
+        sans: ['Manrope', 'Archivo', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace']
       },
       keyframes: {
         'accordion-down': {

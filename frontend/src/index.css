@@ -2,26 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The website's stack, exactly: Archivo for headings, Manrope for body, IBM
+   Plex Mono for labels and figures. Archivo was carrying all three jobs, which
+   is why dense pages read as shouty — it is a display face with no quiet
+   register, and paragraphs set in it shout at you. */
 body {
     margin: 0;
-    font-family: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: "Manrope", "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* Archivo's default figures are proportional, so a column of numbers
-       jitters as values change. Lining figures cost nothing and stop KPI
-       cards shifting on every refresh. */
+    /* Proportional figures make a column of numbers jitter as values change.
+       Lining figures cost nothing and stop KPI cards shifting on refresh. */
     font-variant-numeric: lining-nums tabular-nums;
     text-rendering: optimizeLegibility;
+
+    /* ── The ground ────────────────────────────────────────────────────────
+       True black with two soft washes over it, the way obrinex.space's
+       SiteBackground works. Flat #131315 everywhere is what made the CRM read
+       as a wireframe: a surface with no light on it has no depth, so every
+       panel floated on the same grey.
+
+       `fixed` so the gradient belongs to the viewport, not the document — it
+       must not slide away under a long table. */
+    background-color: #000;
+    background-image:
+        radial-gradient(ellipse 80% 60% at 15% 0%, rgba(255, 255, 255, 0.055), transparent 60%),
+        radial-gradient(ellipse 70% 50% at 100% 100%, rgba(255, 255, 255, 0.035), transparent 65%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
 }
 
 code, .font-mono {
-    font-family: "Space Mono", Menlo, Monaco, Consolas, monospace;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Display type is set tight because Archivo is wide at large sizes and the
-   headings otherwise read as loose next to the mono labels beside them. */
+/* Headings stay Archivo. Set tight, because Archivo is wide at large sizes and
+   otherwise reads loose beside the mono labels next to it. */
 h1, h2, h3, .font-display {
-    letter-spacing: -0.018em;
+    font-family: "Archivo", sans-serif;
+    letter-spacing: -0.02em;
 }
 
 /* Headings wrap on meaning rather than leaving one orphaned word. */
@@ -56,9 +75,9 @@ h1, h2, h3 {
 
 @layer base {
     :root {
-        --background: 240 5% 8%;
-        --foreground: 240 5% 96%;
-        --card: 240 4% 10%;
+        --background: 0 0% 0%;
+        --foreground: 0 0% 96%;
+        --card: 0 0% 4%;
         --card-foreground: 240 5% 96%;
         --popover: 240 4% 10%;
         --popover-foreground: 240 5% 96%;
@@ -109,8 +128,8 @@ h1, h2, h3 {
         --ash: 240 5% 72%;
     }
     .dark {
-        --background: 240 5% 8%;
-        --foreground: 240 5% 96%;
+        --background: 0 0% 0%;
+        --foreground: 0 0% 96%;
     }
 }
 
@@ -119,7 +138,9 @@ h1, h2, h3 {
         @apply border-border;
     }
     body {
-        @apply bg-background text-foreground;
+        /* `bg-background` deliberately NOT applied: it would paint an opaque
+           colour over the gradient set above. The colour is already black. */
+        @apply text-foreground;
     }
     html {
         color-scheme: dark;
