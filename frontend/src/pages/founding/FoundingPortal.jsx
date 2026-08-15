@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { SwapUp } from "@/components/motion";
 import {
   MessageSquare, Sparkles, LogOut, FolderKanban, Users, UserPlus,
-  BookOpen, HelpCircle, IdCard, MoreHorizontal, ShieldCheck, Compass,
+  BookOpen, HelpCircle, IdCard, Menu, X, ShieldCheck, Compass,
   PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import api from "@/lib/api";
@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePortal } from "@/contexts/PortalContext";
 import NotificationBell from "@/components/NotificationBell";
 import { useUnreadCounts } from "@/lib/useNotifications";
-import { NavRail, TabBar, MoreSheet, useNavShortcuts } from "@/components/portal/PortalNav";
+import { NavRail, useNavShortcuts } from "@/components/portal/PortalNav";
 import OnboardingGate from "@/components/portal/OnboardingGate";
 import PortalTour from "@/components/portal/PortalTour";
 import PortalAssistant from "@/components/portal/PortalAssistant";
@@ -85,8 +85,6 @@ const TABS = [
 ];
 
 const KEYS = TABS.map((t) => t.key);
-const PRIMARY = TABS.filter((t) => t.primary);
-const OVERFLOW = TABS.filter((t) => !t.primary);
 
 //: Where the collapsed-rail preference is kept.
 const RAIL_KEY = "obx-founding-rail";
@@ -124,7 +122,7 @@ export default function FoundingPortal() {
   const { ready, blocked, showGuide, replayGuide } = usePortal();
   const [me, setMe] = useState(null);
   const [params, setParams] = useSearchParams();
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
 
   // Remembered, because a member who narrowed the rail meant it — re-expanding
   // on every visit is the setting quietly not working.
@@ -149,7 +147,7 @@ export default function FoundingPortal() {
   const setTab = useCallback(
     (key) => {
       setParams(key === "membership" ? {} : { tab: key }, { replace: true });
-      setMoreOpen(false);
+      setNavOpen(false);
     },
     [setParams]
   );
@@ -160,8 +158,8 @@ export default function FoundingPortal() {
   }, [blocked]);
 
   useEffect(() => {
-    if (!moreOpen) return;
-    const onKey = (e) => e.key === "Escape" && setMoreOpen(false);
+    if (!navOpen) return;
+    const onKey = (e) => e.key === "Escape" && setNavOpen(false);
     window.addEventListener("keydown", onKey);
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -169,7 +167,7 @@ export default function FoundingPortal() {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = previous;
     };
-  }, [moreOpen]);
+  }, [navOpen]);
 
   const onRoomRead = useCallback(() => clear("community"), [clear]);
   const withBadges = (list) =>
@@ -178,7 +176,7 @@ export default function FoundingPortal() {
   // Number keys jump between sections, matching the numerals printed in the
   // rail. Off while either overlay is up — the gate and the tour own the
   // keyboard, and a member typing an answer must not be thrown to section 4.
-  useNavShortcuts(TABS, setTab, { enabled: !blocked && !showGuide && !moreOpen });
+  useNavShortcuts(TABS, setTab, { enabled: !blocked && !showGuide && !navOpen });
 
   const active = TABS.find((t) => t.key === tab);
 
@@ -282,6 +280,16 @@ export default function FoundingPortal() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="obx-aurora sticky top-0 z-40 border-b border-white/[0.07] bg-black/60 backdrop-blur-xl">
           <div className="relative z-10 mx-auto flex max-w-5xl items-center gap-3 px-4 py-3 sm:px-6">
+            <button
+              type="button"
+              onClick={() => setNavOpen(true)}
+              aria-label="Open navigation"
+              aria-expanded={navOpen}
+              data-testid="founding-menu-trigger"
+              className="obx-glass obx-lift flex h-9 w-9 shrink-0 items-center justify-center rounded-xl md:hidden"
+            >
+              <Menu className="h-4 w-4" />
+            </button>
             <div className="min-w-0">
               <SwapUp swapKey={tab} distance={6} duration={0.3}>
                 <h1 className="truncate font-display text-base font-bold tracking-tight sm:text-lg">
@@ -312,7 +320,7 @@ export default function FoundingPortal() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-24 pt-5 sm:px-6 sm:pt-6 md:pb-10">
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-10 pt-5 sm:px-6 sm:pt-6">
           <SwapUp swapKey={tab} distance={14} duration={0.44}>
             <div>
               {tab === "membership" && <MembershipPassport />}
@@ -329,33 +337,86 @@ export default function FoundingPortal() {
         </main>
       </div>
 
-      <TabBar
-        items={[
-          ...withBadges(PRIMARY),
-          {
-            key: "__more",
-            label: "More",
-            short: "More",
-            icon: MoreHorizontal,
-            badge: 0,
-            testId: "founding-tabbar-more",
-          },
-        ]}
-        activeKey={OVERFLOW.some((t) => t.key === tab) ? "__more" : tab}
-        onSelect={(key) => (key === "__more" ? setMoreOpen(true) : setTab(key))}
-        groupId="founding-tabs"
-        testId="founding-tabbar"
-        hideFrom="md"
-      />
+      {/* The phone drawer. A fixed tab bar across the foot took 64px of an
+          812px phone permanently and still hid five of the nine sections
+          behind More. One tap opens this, all nine are in it, and the screen
+          is the member's again. */}
+      <div
+        data-testid="founding-mobile-nav"
+        aria-hidden={!navOpen}
+        className={`pointer-events-none fixed inset-0 z-50 transition md:hidden ${
+          navOpen ? "pointer-events-auto" : ""
+        }`}
+      >
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setNavOpen(false)}
+          className={`absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity duration-300 ${
+            navOpen ? "opacity-100" : "opacity-0"
+          }`}
+        />
+        <aside
+          className={`absolute left-0 top-0 flex h-full w-[84vw] max-w-[320px] flex-col border-r border-white/10 bg-black/90 backdrop-blur-2xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            navOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-white/[0.07] px-4">
+            <div className="flex items-center gap-2.5">
+              <div className="obx-holo obx-glass relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl">
+                <span className="relative z-10 font-display text-sm font-bold">O</span>
+              </div>
+              <div className="leading-none">
+                <p className="font-display text-sm font-bold tracking-tight">Founding Circle</p>
+                <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.22em] text-graphite">
+                  Obrinex
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNavOpen(false)}
+              aria-label="Close navigation"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-graphite transition-colors hover:bg-white/[0.06] hover:text-foreground"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-      <MoreSheet
-        open={moreOpen}
-        items={withBadges(OVERFLOW)}
-        activeKey={tab}
-        onSelect={setTab}
-        onClose={() => setMoreOpen(false)}
-        hideFrom="md"
-      />
+          <NavRail
+            items={withBadges(TABS)}
+            activeKey={tab}
+            onSelect={setTab}
+            groupId="founding-drawer"
+          />
+
+          <div className="shrink-0 space-y-2 border-t border-white/[0.07] p-3">
+            <button
+              onClick={() => { setNavOpen(false); replayGuide(); }}
+              data-testid="founding-drawer-replay"
+              className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-[11px] text-graphite transition-colors hover:text-primary"
+            >
+              <Compass className="h-3 w-3" /> Replay the guide
+            </button>
+            <div className="flex items-center gap-2 border-t border-white/[0.07] pt-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium">{user?.name}</p>
+                <p className="obx-figure truncate font-mono text-[10px] uppercase tracking-[0.16em] text-carbon">
+                  {me ? `${me.members} member${me.members === 1 ? "" : "s"}` : " "}
+                </p>
+              </div>
+              <button
+                onClick={logout}
+                data-testid="founding-drawer-logout"
+                aria-label="Sign out"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-graphite transition-colors hover:bg-white/[0.06] hover:text-foreground"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </aside>
+      </div>
 
       {showGuide && <PortalTour steps={TOUR} title="Founding Circle · Guide" />}
     </div>

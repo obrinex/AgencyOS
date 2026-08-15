@@ -232,8 +232,9 @@ export default function MemberProfile() {
       </Section>
 
       {/* Sticky on a phone, where the save button would otherwise be three
-          screens below whatever was just typed. */}
-      <div className="pb-safe fixed inset-x-0 bottom-14 z-30 border-t border-white/10 bg-black/70 px-4 py-3 backdrop-blur-xl sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+          screens below whatever was just typed. Sits on the floor now — it was
+          offset by 14 to clear a bottom tab bar that no longer exists. */}
+      <div className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-black/70 px-4 py-3 backdrop-blur-xl sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
         <button
           onClick={save}
           disabled={busy || !dirty}

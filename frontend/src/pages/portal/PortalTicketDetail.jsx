@@ -153,7 +153,7 @@ export default function PortalTicketDetail() {
         <div ref={endRef} />
       </div>
 
-      <div className="obx-glass sticky bottom-20 flex items-end gap-2 rounded-2xl p-2 md:bottom-4">
+      <div className="obx-glass sticky bottom-4 flex items-end gap-2 rounded-2xl p-2">
         <textarea
           rows={1}
           value={message}
