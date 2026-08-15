@@ -501,53 +501,13 @@ h1, h2, h3 {
        accent — the front page is the brandmark's page, and the brand is
        monochrome. The body grey is applied inline where it is used rather than
        as a class, so there is no rule here that nothing references. */
-    .obx-site-muted { color: #93a3bd; }
+    .obx-site-muted { color: hsl(var(--carbon)); }
 
-    /* ── The blue ──────────────────────────────────────────────────────────
-       The front page's ground, not its type. A gradient background with white
-       text on it — the earlier pass had this backwards and put the gradient
-       *inside* the letterforms, which reads as a novelty typeface rather than
-       as a lit room.
-
-       Fixed to the viewport so it belongs to the screen rather than to the
-       document: a gradient that scrolls away leaves the bottom of a long page
-       on flat black. */
-    .obx-site-ground {
-        position: fixed;
-        inset: 0;
-        z-index: -1;
-        pointer-events: none;
-        background:
-            radial-gradient(120% 80% at 50% -10%, #123a7a 0%, #0a1c3d 38%, #04081a 70%, #01030a 100%),
-            linear-gradient(180deg, #04091c 0%, #010309 100%);
-    }
-
-    /* Two slow lights over the ground, offset from each other so the page is
-       never uniformly lit top to bottom. */
-    .obx-site-ground::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        background:
-            radial-gradient(45% 34% at 14% 32%, rgba(47, 123, 255, 0.20), transparent 70%),
-            radial-gradient(40% 30% at 86% 68%, rgba(0, 176, 255, 0.14), transparent 70%);
-        filter: blur(28px);
-    }
-
-    /* A section wash, for the two densest blocks. Subtler than the ground so
-       it reads as depth rather than as a second background. */
-    .obx-blue-wash {
-        position: relative;
-    }
-    .obx-blue-wash::before {
-        content: "";
-        position: absolute;
-        inset: -18% -28%;
-        z-index: -1;
-        pointer-events: none;
-        background: radial-gradient(38% 40% at 50% 50%, rgba(60, 140, 255, 0.10), transparent 72%);
-        filter: blur(46px);
-    }
+    /* No ground of its own. The app already mounts `DarkGradientBg fixed
+       accent="cyan"` once at the root of App.js, outside the Router, so it is
+       behind every route including this one. An earlier pass painted a second
+       blue gradient over it, which is why the front page did not match the
+       tool it is the front page for. */
 
     /* Lenis drives scrolling from JS; these are the two rules it needs so the
        browser stops fighting it. Without the first, a trackpad fling is
