@@ -31,6 +31,10 @@ GOOD_ANSWERS = {
     "bottleneck": "Lead flow is inconsistent.",
     "already_tried": "Cold email and two contractors.",
     "first_90_days": "A repeatable pipeline.",
+    # One social is enough — see `SOCIAL_KEYS`. Each is optional alone, but an
+    # application with no way to look the person up cannot be scored on
+    # credibility, so the set is required together.
+    "linkedin": "https://linkedin.com/in/example",
 }
 
 
@@ -122,13 +126,43 @@ def test_commitment_does_not_reward_over_promising():
 # --- Validation ---------------------------------------------------------------
 
 def test_every_missing_required_answer_is_reported_at_once():
-    """One trip through the form, not one fault per reload."""
+    """One trip through the form, not one fault per reload.
+
+    The extra problem beyond `REQUIRED_KEYS` is the socials rule: each of those
+    fields is optional by itself, so none of them is in `REQUIRED_KEYS`, but
+    leaving all four empty is still a fault.
+    """
     problems = founding.validate_answers({})
-    assert len(problems) == len(founding.REQUIRED_KEYS)
+    assert len(problems) == len(founding.REQUIRED_KEYS) + 1
 
 
 def test_a_valid_application_has_no_problems():
     assert founding.validate_answers(GOOD_ANSWERS) == []
+
+
+def test_an_application_with_no_way_to_find_them_is_refused():
+    """Every social blank means the credibility axis has nothing to read, and
+    ten points would become an automatic zero nobody could explain."""
+    answers = {k: v for k, v in GOOD_ANSWERS.items() if k not in founding.SOCIAL_KEYS}
+    problems = founding.validate_answers(answers)
+    assert any("find you" in p for p in problems)
+
+
+def test_any_single_social_is_enough():
+    base = {k: v for k, v in GOOD_ANSWERS.items() if k not in founding.SOCIAL_KEYS}
+    for key in founding.SOCIAL_KEYS:
+        assert founding.validate_answers({**base, key: "something"}) == []
+
+
+def test_a_rating_entered_under_the_old_axis_name_still_counts():
+    """`work_quality` became `credibility`. Applications rated before the
+    rename must keep their ten points, or every past decision stops
+    reproducing — which is how a scored process loses its authority."""
+    old = founding.qualitative_score({"work_quality": 10})
+    assert old["parts"]["credibility"] == 10
+    # The new name wins where both somehow exist.
+    both = founding.qualitative_score({"work_quality": 3, "credibility": 9})
+    assert both["parts"]["credibility"] == 9
 
 
 # --- Seats --------------------------------------------------------------------
@@ -637,3 +671,198 @@ async def test_deleting_something_that_is_not_there_is_a_404(db):
         with pytest.raises(HTTPException) as exc:
             await router.delete_application(bad, request=None, user=ADMIN)
         assert exc.value.status_code == 404
+
+
+# --- Member profiles, directory and projects ----------------------------------
+
+async def _member_with_profile(db, email="m@example.com", name="Mem"):
+    """An approved member and the user record that reaches their portal."""
+    from routers import founding as router
+
+    await _apply(email=email, name=name)
+    doc = await db[router.APPLICATIONS].find_one({"email": email})
+    await db[router.APPLICATIONS].update_one(
+        {"_id": doc["_id"]}, {"$set": {"status": founding.APPROVED}})
+    return ({"id": f"u-{email}", "role": "founding",
+             "founding_application_id": str(doc["_id"])}, doc)
+
+
+@pytest.mark.asyncio
+async def test_contact_details_are_hidden_from_other_members_by_default(db):
+    """They gave us a phone number to be assessed, not to be published to nine
+    strangers. Nothing shareable appears until its own flag is turned on."""
+    from routers import founding as router
+
+    user, _ = await _member_with_profile(db)
+    await router.my_profile(user=user)  # seeds the profile from the application
+
+    listing = await router.directory(user=user)
+    person = next(p for p in listing if p["name"] == "Mem")
+
+    assert person["company"] == "Acme"          # always on - it is a directory
+    assert person["linkedin"] == ""             # supplied, but not shared
+    assert person["email"] == ""
+    assert person["phone"] == ""
+
+
+@pytest.mark.asyncio
+async def test_a_member_can_choose_what_to_share(db):
+    from routers import founding as router
+
+    user, _ = await _member_with_profile(db)
+    await router.my_profile(user=user)
+    await router.update_my_profile(
+        router.ProfileUpdate(visibility={"linkedin": True}), user=user)
+
+    person = next(p for p in await router.directory(user=user) if p["name"] == "Mem")
+    assert person["linkedin"] == "https://linkedin.com/in/example"
+    assert person["phone"] == ""  # still off - one flag does not open the rest
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_visibility_key_cannot_be_smuggled_in(db):
+    """A flag nothing reads would be believed to be doing something."""
+    from routers import founding as router
+
+    user, _ = await _member_with_profile(db)
+    await router.my_profile(user=user)
+    saved = await router.update_my_profile(
+        router.ProfileUpdate(visibility={"linkedin": True, "salary": True}), user=user)
+
+    assert "salary" not in saved["visibility"]
+    assert set(saved["visibility"]) == set(router.SHAREABLE)
+
+
+@pytest.mark.asyncio
+async def test_editing_a_profile_never_rewrites_the_application(db):
+    """The application is the record of what they said to get in. If editing a
+    profile could change it, the score would stop matching the answers."""
+    from routers import founding as router
+
+    user, application = await _member_with_profile(db)
+    await router.my_profile(user=user)
+    await router.update_my_profile(
+        router.ProfileUpdate(headline="Something else entirely"), user=user)
+
+    fresh = await db[router.APPLICATIONS].find_one({"_id": application["_id"]})
+    assert fresh["answers"]["one_liner"] == "We do a thing."
+
+
+@pytest.mark.asyncio
+async def test_projects_are_listed_with_who_is_building_them(db):
+    from routers import founding as router
+
+    user, _ = await _member_with_profile(db)
+    await router.my_profile(user=user)
+    await router.update_my_profile(
+        router.ProfileUpdate(projects=[
+            router.ProjectEntry(title="Warehouse robots", status="Building"),
+        ]), user=user)
+
+    rows = await router.projects(user=user)
+    assert rows[0]["title"] == "Warehouse robots"
+    assert rows[0]["owner"] == "Mem"
+
+
+@pytest.mark.asyncio
+async def test_an_unlisted_member_keeps_their_name_and_loses_everything_else(db):
+    """Opting out of the directory is not the same as leaving the circle."""
+    from routers import founding as router
+
+    user, _ = await _member_with_profile(db)
+    await router.my_profile(user=user)
+    await router.update_my_profile(
+        router.ProfileUpdate(listed=False, headline="Hidden",
+                             projects=[router.ProjectEntry(title="Secret")]),
+        user=user)
+
+    person = next(p for p in await router.directory(user=user) if p["name"] == "Mem")
+    assert person["headline"] == ""
+    assert person["projects"] == []
+    assert await router.projects(user=user) == []
+
+
+# --- Referrals ----------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_a_referral_tags_the_application_without_helping_it(db):
+    """Knowing a member gets your application read, not accepted. A referral
+    that bought points would make the circle a place you get into by knowing
+    someone."""
+    from routers import founding as router
+
+    user, member = await _member_with_profile(db, email="ref@example.com", name="Ref")
+    created = await router.create_referral(
+        router.ReferralCreate(label="A friend", note="Sharp operator"), user=user)
+
+    await router.public_apply(
+        router.ApplicationSubmit(name="Guest", email="guest@example.com",
+                                 answers=GOOD_ANSWERS, referral=created["code"]),
+        request=None)
+
+    doc = await db[router.APPLICATIONS].find_one({"email": "guest@example.com"})
+    assert doc["referred_by"] == "Ref"
+    assert doc["referral_note"] == "Sharp operator"
+    # Same score it would have had arriving cold.
+    assert doc["score"]["total"] == founding.total_score(GOOD_ANSWERS, {})["total"]
+
+
+@pytest.mark.asyncio
+async def test_an_invitation_can_only_produce_one_application(db):
+    """It did its job the moment it produced an application; left live, one
+    link would introduce a queue."""
+    from routers import founding as router
+
+    user, _ = await _member_with_profile(db, email="ref2@example.com", name="Ref")
+    code = (await router.create_referral(router.ReferralCreate(), user=user))["code"]
+
+    await router.public_apply(
+        router.ApplicationSubmit(name="First", email="first@example.com",
+                                 answers=GOOD_ANSWERS, referral=code), request=None)
+    await router.public_apply(
+        router.ApplicationSubmit(name="Second", email="second@example.com",
+                                 answers=GOOD_ANSWERS, referral=code), request=None)
+
+    second = await db[router.APPLICATIONS].find_one({"email": "second@example.com"})
+    assert second["referred_by"] is None
+    assert (await router.check_referral(code))["valid"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_stale_invitation_does_not_cost_someone_their_answers(db):
+    """The applicant did nothing wrong. Losing eleven answers over an expired
+    link would be absurd."""
+    from routers import founding as router
+
+    await router.public_apply(
+        router.ApplicationSubmit(name="Guest", email="stale@example.com",
+                                 answers=GOOD_ANSWERS, referral="not-a-real-code"),
+        request=None)
+
+    doc = await db[router.APPLICATIONS].find_one({"email": "stale@example.com"})
+    assert doc is not None
+    assert doc["referred_by"] is None
+
+
+@pytest.mark.asyncio
+async def test_checking_a_code_reveals_nothing_about_members(db):
+    """Public endpoint. An unknown code and a spent one must look identical, or
+    it becomes a way to enumerate the circle."""
+    from routers import founding as router
+
+    assert await router.check_referral("nonsense") == {"valid": False}
+
+
+@pytest.mark.asyncio
+async def test_a_member_cannot_revoke_someone_elses_invitation(db):
+    from fastapi import HTTPException
+    from routers import founding as router
+
+    one, _ = await _member_with_profile(db, email="one@example.com", name="One")
+    two, _ = await _member_with_profile(db, email="two@example.com", name="Two")
+    await router.create_referral(router.ReferralCreate(), user=one)
+    mine = (await router.my_referrals(user=one))[0]
+
+    with pytest.raises(HTTPException) as exc:
+        await router.revoke_referral(mine["id"], user=two)
+    assert exc.value.status_code == 404

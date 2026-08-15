@@ -119,11 +119,22 @@ COMMITMENT_POINTS = {
 #: The qualitative block you fill in while reading. Kept to four axes because a
 #: rubric nobody completes is a rubric that does not exist.
 QUALITATIVE_MAX = {
-    "clarity": 10,      # Q6: is the bottleneck a real, specific problem?
+    "clarity": 10,         # Q6: is the bottleneck a real, specific problem?
     "self_awareness": 10,  # Q7: did they try anything before asking?
-    "work_quality": 10,    # Q8: the linked work
+    "credibility": 10,     # Q8: what their public presence says about them
     "fit": 5,              # Q9: can this circle actually give them that?
 }
+
+#: `credibility` used to be `work_quality`, scored from a single "best piece of
+#: work" link. That question became a set of social profiles, so the axis is now
+#: about track record and how someone shows up publicly rather than about one
+#: artefact.
+#:
+#: The old key is still read when scoring, because applications rated before the
+#: change hold `work_quality` and would otherwise silently lose ten points -
+#: every past decision would stop reproducing, which is the sort of thing that
+#: makes a scored process untrustworthy.
+RENAMED_AXES = {"credibility": "work_quality"}
 
 AUTOMATIC_MAX = (max(REVENUE_POINTS.values()) + max(TENURE_POINTS.values())
                  + max(TEAM_POINTS.values()) + max(COMMITMENT_POINTS.values()))
@@ -149,8 +160,23 @@ QUESTIONS = [
      "label": "What is the single biggest bottleneck in your business right now?"},
     {"key": "already_tried", "type": "textarea", "required": True, "max_length": 1500,
      "label": "What have you already tried to solve it?"},
-    {"key": "best_work", "type": "url", "required": False,
-     "label": "Link to your best piece of work"},
+    # Socials replaced a single "best piece of work" link. A portfolio URL asks
+    # people who do not have a portfolio to invent one, and told us nothing
+    # about anybody whose work is a business rather than an artefact. A LinkedIn
+    # and a phone number say more about an operator than a case-study page does,
+    # and they are what the member directory needs anyway.
+    #
+    # All optional, individually: requiring a Twitter account is a filter on
+    # personality, not on quality. `validate_answers` refuses an application
+    # that leaves *every* one of them empty - see SOCIAL_KEYS.
+    {"key": "linkedin", "type": "url", "required": False,
+     "label": "LinkedIn"},
+    {"key": "instagram", "type": "text", "required": False,
+     "label": "Instagram"},
+    {"key": "twitter", "type": "text", "required": False,
+     "label": "X / Twitter"},
+    {"key": "phone", "type": "text", "required": False, "max_length": 40,
+     "label": "Contact number"},
     {"key": "first_90_days", "type": "textarea", "required": True, "max_length": 1500,
      "label": "What would you want from the Founding Circle in your first 90 days?"},
     {"key": "commitment_band", "type": "band", "required": True,
@@ -183,6 +209,11 @@ BAND_LABELS = {
 REQUIRED_KEYS = tuple(q["key"] for q in QUESTIONS if q["required"])
 BAND_KEYS = tuple(q["key"] for q in QUESTIONS if q["type"] == "band")
 
+#: The socials block. Each is optional on its own; together they are not - an
+#: application with no way to look someone up cannot be scored on credibility,
+#: and the ten points would silently become an automatic zero.
+SOCIAL_KEYS = ("linkedin", "instagram", "twitter", "phone")
+
 
 def validate_answers(answers: dict) -> list:
     """Problems with a submitted application. Empty list means it is fine.
@@ -205,6 +236,9 @@ def validate_answers(answers: dict) -> list:
         limit = question.get("max_length")
         if limit and isinstance(text, str) and len(text) > limit:
             problems.append(f"{question['label']} is limited to {limit} characters.")
+
+    if not any(str((answers or {}).get(k) or "").strip() for k in SOCIAL_KEYS):
+        problems.append("Give at least one way to find you — a profile or a number.")
     return problems
 
 
@@ -228,12 +262,20 @@ def automatic_score(answers: dict) -> dict:
 
 
 def qualitative_score(ratings: dict) -> dict:
-    """The 35 points you enter. Each axis is clamped to its own ceiling."""
+    """The 35 points you enter. Each axis is clamped to its own ceiling.
+
+    An axis that has been renamed falls back to its old key, so a score entered
+    before the rename still counts. Without that, every application rated under
+    the old rubric would quietly drop ten points the day the name changed.
+    """
     ratings = ratings or {}
     parts = {}
     for axis, ceiling in QUALITATIVE_MAX.items():
+        raw = ratings.get(axis)
+        if raw in (None, "") and axis in RENAMED_AXES:
+            raw = ratings.get(RENAMED_AXES[axis])
         try:
-            value = int(ratings.get(axis) or 0)
+            value = int(raw or 0)
         except (TypeError, ValueError):
             value = 0
         parts[axis] = max(0, min(value, ceiling))

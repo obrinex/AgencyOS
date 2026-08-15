@@ -52,6 +52,16 @@ ASSISTANT = "founding_assistant_messages"
 FOUNDING_ROLE = "founding"
 require_founding = require_roles(FOUNDING_ROLE)
 
+#: The community room, the directory and the projects page are open to members
+#: and to staff. Staff are in because the circle is the agency's own room - a
+#: host who cannot see their own community is not hosting it. Everyone else,
+#: including clients, is refused by exact role match.
+#:
+#: Defined up here rather than beside the chat endpoints because `Depends()`
+#: resolves when the module is imported: any route declared above this line
+#: would fail at import with a NameError, not at request time.
+require_circle = require_roles(FOUNDING_ROLE, "admin", "team_member")
+
 #: Unauthenticated and it writes a document plus sends an email, so it is
 #: throttled twice: per IP, and per address so rotating IPs buys nothing.
 APPLY_RATE_LIMIT = 3
@@ -115,6 +125,12 @@ class ApplicationSubmit(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     email: EmailStr
     answers: dict
+    #: A member's invitation code, if they arrived through one. Carries a tag
+    #: onto the application and nothing else — it buys no points and skips no
+    #: questions. An invalid or spent code is ignored rather than rejected: the
+    #: applicant did nothing wrong and losing their answers over a stale link
+    #: would be absurd.
+    referral: Optional[str] = Field(default=None, max_length=64)
 
 
 @router.get("/public/founding/form")
@@ -176,6 +192,11 @@ async def public_apply(payload: ApplicationSubmit, request: Request):
     answers = {k: v for k, v in (payload.answers or {}).items()
                if k in {q["key"] for q in founding.QUESTIONS}}
     score = founding.total_score(answers, {})
+
+    referral = None
+    if payload.referral:
+        referral = await db[REFERRALS].find_one({"code": payload.referral, "used_at": None})
+
     doc = {
         "round": current["key"],
         "name": payload.name.strip(),
@@ -184,11 +205,24 @@ async def public_apply(payload: ApplicationSubmit, request: Request):
         "status": founding.PENDING,
         "ratings": {},
         "score": score,
+        "referred_by": referral.get("referrer_name") if referral else None,
+        "referred_by_id": referral.get("referrer_application_id") if referral else None,
+        "referral_note": referral.get("note") if referral else None,
         "created_at": _now(),
         "decided_at": None, "decided_by": None, "decision_note": None,
         "invite_token": None, "invite_used_at": None,
     }
-    await db[APPLICATIONS].insert_one(doc)
+    inserted = await db[APPLICATIONS].insert_one(doc)
+
+    if referral:
+        # Marked used on submission, not on approval. The invitation did its
+        # job the moment it produced an application; leaving it live would let
+        # one link introduce a queue of people.
+        await db[REFERRALS].update_one(
+            {"_id": referral["_id"]},
+            {"$set": {"used_at": _now(),
+                      "used_by_application_id": str(inserted.inserted_id)}},
+        )
 
     received = await db[APPLICATIONS].count_documents({"round": current["key"]})
     await db[ROUNDS].update_one({"key": current["key"]}, {"$set": {"received": received}})
@@ -629,15 +663,304 @@ async def my_membership(user: dict = Depends(require_founding)):
     }
 
 
+# --- Members: profile, directory, projects ------------------------------------
+#
+# A member's application is not their profile. The application is a fixed record
+# of what they said to get in and must never change; the profile is theirs to
+# edit, and it is what other members actually see. Keeping them in separate
+# documents is what makes "edit my profile" incapable of rewriting history.
+
+PROFILES = "founding_profiles"
+
+#: What a member can choose to expose. Everything here defaults to False except
+#: the three fields the directory is useless without.
+#:
+#: Opt-in per field, because the phone number and socials on an application were
+#: given to *us*, to be assessed - not to be published to nine strangers. A
+#: private community that quietly republishes contact details is one leak away
+#: from being the reason someone leaves.
+SHAREABLE = ("email", "phone", "linkedin", "instagram", "twitter")
+DEFAULT_VISIBILITY = {field: False for field in SHAREABLE}
+
+
+class ProjectEntry(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    summary: str = Field(default="", max_length=400)
+    #: Free text on purpose. A fixed enum of statuses is a taxonomy argument
+    #: nobody in a ten-person room needs to have.
+    status: str = Field(default="", max_length=40)
+    link: str = Field(default="", max_length=400)
+
+
+class ProfileUpdate(BaseModel):
+    headline: Optional[str] = Field(default=None, max_length=160)
+    bio: Optional[str] = Field(default=None, max_length=1200)
+    #: Editable copies, seeded from the application. A member who changes jobs
+    #: should not have to ask us to edit a record they cannot see.
+    email: Optional[str] = Field(default=None, max_length=254)
+    phone: Optional[str] = Field(default=None, max_length=40)
+    linkedin: Optional[str] = Field(default=None, max_length=300)
+    instagram: Optional[str] = Field(default=None, max_length=300)
+    twitter: Optional[str] = Field(default=None, max_length=300)
+    projects: Optional[list[ProjectEntry]] = None
+    visibility: Optional[dict] = None
+    #: Members can ask to be listed at all. Off means the directory shows them
+    #: as a member and nothing else.
+    listed: Optional[bool] = None
+
+
+async def _profile(application: dict) -> dict:
+    """A member's profile, seeded from their application the first time.
+
+    Seeded rather than empty so the directory is useful on day one: someone who
+    never opens their profile still appears with their company and whatever
+    socials they applied with — but only the three always-public fields are
+    visible until they choose otherwise.
+    """
+    existing = await db[PROFILES].find_one({"application_id": str(application["_id"])})
+    if existing:
+        return existing
+
+    answers = application.get("answers") or {}
+    doc = {
+        "application_id": str(application["_id"]),
+        "name": application.get("name"),
+        "company": answers.get("company"),
+        "headline": answers.get("one_liner") or "",
+        "bio": "",
+        "email": application.get("email"),
+        "phone": answers.get("phone") or "",
+        "linkedin": answers.get("linkedin") or "",
+        "instagram": answers.get("instagram") or "",
+        "twitter": answers.get("twitter") or "",
+        "projects": [],
+        "visibility": dict(DEFAULT_VISIBILITY),
+        "listed": True,
+        "created_at": _now(),
+        "updated_at": _now(),
+    }
+    await db[PROFILES].update_one({"application_id": doc["application_id"]},
+                                  {"$setOnInsert": doc}, upsert=True)
+    return await db[PROFILES].find_one({"application_id": doc["application_id"]})
+
+
+def _public_profile(profile: dict) -> dict:
+    """One member as the rest of the circle sees them.
+
+    Name, company and projects are always on - a directory that hides those is
+    not a directory. Everything else appears only where its own visibility flag
+    says so, and absent flags mean hidden.
+    """
+    visibility = {**DEFAULT_VISIBILITY, **(profile.get("visibility") or {})}
+    view = {
+        "id": profile.get("application_id"),
+        "name": profile.get("name"),
+        "company": profile.get("company"),
+        "headline": profile.get("headline") or "",
+        "bio": profile.get("bio") or "",
+        "projects": profile.get("projects") or [],
+    }
+    for field in SHAREABLE:
+        view[field] = profile.get(field) or "" if visibility.get(field) else ""
+    return view
+
+
+@router.get("/founding/profile")
+async def my_profile(user: dict = Depends(require_founding)):
+    """Your own profile, in full — visibility flags never hide it from you."""
+    profile = await _profile(await _member(user))
+    profile["visibility"] = {**DEFAULT_VISIBILITY, **(profile.get("visibility") or {})}
+    return serialize_doc(profile)
+
+
+@router.put("/founding/profile")
+async def update_my_profile(payload: ProfileUpdate,
+                            user: dict = Depends(require_founding)):
+    """Edit your own profile. Nothing here touches the application."""
+    profile = await _profile(await _member(user))
+
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    if "projects" in changes:
+        # Twelve is not a rule about ambition; it keeps one member's list from
+        # becoming the whole projects page.
+        changes["projects"] = [p.model_dump() for p in (payload.projects or [])][:12]
+    if "visibility" in changes:
+        # Only the known flags, only booleans. An unknown key here would be a
+        # field nothing ever reads, silently believed to be doing something.
+        changes["visibility"] = {
+            field: bool(changes["visibility"].get(field, False)) for field in SHAREABLE
+        }
+    changes["updated_at"] = _now()
+
+    await db[PROFILES].update_one({"_id": profile["_id"]}, {"$set": changes})
+    updated = await db[PROFILES].find_one({"_id": profile["_id"]})
+    updated["visibility"] = {**DEFAULT_VISIBILITY, **(updated.get("visibility") or {})}
+    return serialize_doc(updated)
+
+
+@router.get("/founding/directory")
+async def directory(user: dict = Depends(require_circle)):
+    """Everyone in the circle, filtered by what each of them chose to share.
+
+    Members only. There is no public version of this and there should not be —
+    the ten people are not published, which is most of what makes it a private
+    room rather than a list.
+    """
+    approved = await db[APPLICATIONS].find({"status": founding.APPROVED}).to_list(500)
+    people = []
+    for application in approved:
+        profile = await _profile(application)
+        if not profile.get("listed", True):
+            people.append({"id": str(application["_id"]),
+                           "name": profile.get("name"),
+                           "company": profile.get("company"),
+                           "headline": "", "bio": "", "projects": [],
+                           **{f: "" for f in SHAREABLE}})
+            continue
+        people.append(_public_profile(profile))
+    people.sort(key=lambda p: (p.get("name") or "").lower())
+    return people
+
+
+@router.get("/founding/projects")
+async def projects(user: dict = Depends(require_circle)):
+    """Every project every member is working on, newest member last.
+
+    A flat list rather than grouped by person: the point is to see what is being
+    built in the room, and grouping buries a one-project member under a
+    six-project one.
+    """
+    people = await directory(user)
+    out = []
+    for person in people:
+        for project in person.get("projects") or []:
+            out.append({**project, "owner": person["name"],
+                        "owner_company": person.get("company"),
+                        "owner_id": person["id"]})
+    return out
+
+
+# --- Members: referrals -------------------------------------------------------
+#
+# A member mints a link and sends it to someone themselves. The alternative -
+# the member types their friend's name and email into our form - has us emailing
+# a stranger who never asked to hear from us, on the say-so of a third party.
+# A link the referrer sends personally is both better manners and a better
+# introduction than any automated invite we could write.
+#
+# The link does not skip anything. It carries a tag through to the application
+# so you can see who vouched; the eleven questions, the score and the decision
+# are identical. A referral that bought a seat would make the circle a place you
+# get into by knowing someone, which is the opposite of the point.
+
+REFERRALS = "founding_referrals"
+
+#: Per member, for the life of their membership. Generous enough that nobody
+#: sensible hits it, low enough that a leaked account cannot mint a thousand.
+REFERRAL_CAP = 25
+
+
+class ReferralCreate(BaseModel):
+    #: Who they mean to send it to. For the member's own list only — we never
+    #: contact this person, so it is a label rather than a recipient.
+    label: str = Field(default="", max_length=120)
+    note: str = Field(default="", max_length=400)
+
+
+@router.get("/founding/referrals")
+async def my_referrals(user: dict = Depends(require_founding)):
+    """The links you've minted, and what became of them."""
+    member = await _member(user)
+    rows = await db[REFERRALS].find(
+        {"referrer_application_id": str(member["_id"])}).sort("created_at", -1).to_list(200)
+
+    out = []
+    for row in rows:
+        application = None
+        if row.get("used_by_application_id"):
+            application = await db[APPLICATIONS].find_one(
+                {"_id": to_object_id(row["used_by_application_id"])})
+        out.append({
+            "id": str(row["_id"]),
+            "code": row["code"],
+            "label": row.get("label") or "",
+            "note": row.get("note") or "",
+            "created_at": row.get("created_at"),
+            "used_at": row.get("used_at"),
+            # Deliberately coarse. A referrer is told their introduction landed
+            # and whether it went anywhere; they are not shown someone else's
+            # score, answers or rejection.
+            "status": (application or {}).get("status") if application else None,
+            "applicant_name": (application or {}).get("name") if application else None,
+        })
+    return out
+
+
+@router.post("/founding/referrals")
+async def create_referral(payload: ReferralCreate,
+                          user: dict = Depends(require_founding)):
+    member = await _member(user)
+    used = await db[REFERRALS].count_documents(
+        {"referrer_application_id": str(member["_id"])})
+    if used >= REFERRAL_CAP:
+        raise HTTPException(
+            status_code=409,
+            detail=f"That's all {REFERRAL_CAP} of your invitations. Ask us if you need more.")
+
+    code = secrets.token_urlsafe(9)
+    await db[REFERRALS].insert_one({
+        "code": code,
+        "referrer_application_id": str(member["_id"]),
+        "referrer_name": member.get("name"),
+        "label": payload.label.strip(),
+        "note": payload.note.strip(),
+        "created_at": _now(),
+        "used_at": None,
+        "used_by_application_id": None,
+    })
+    return {"code": code}
+
+
+@router.delete("/founding/referrals/{referral_id}")
+async def revoke_referral(referral_id: str, user: dict = Depends(require_founding)):
+    """Withdraw a link that hasn't been used. A used one stays as a record."""
+    member = await _member(user)
+    try:
+        oid = to_object_id(referral_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    result = await db[REFERRALS].delete_one({
+        "_id": oid,
+        "referrer_application_id": str(member["_id"]),
+        "used_at": None,
+    })
+    if not result.deleted_count:
+        raise HTTPException(status_code=404,
+                            detail="Not found, or it has already been used.")
+    return {"revoked": True}
+
+
+@router.get("/public/founding/referral/{code}")
+async def check_referral(code: str):
+    """Does this invitation code mean anything? Used by the website's form.
+
+    Says who vouched and nothing else. It is a public endpoint, so it must not
+    become a way to enumerate members: an unknown code and a used one both
+    answer `valid: false` with no further detail.
+    """
+    row = await db[REFERRALS].find_one({"code": code, "used_at": None})
+    if not row:
+        return {"valid": False}
+    return {"valid": True, "referrer": row.get("referrer_name")}
+
+
 class ChatPost(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
 
 
-#: The community room is open to members and to staff. Staff are in it because
-#: the circle is the agency's own room - a host who cannot speak in their own
-#: community is not hosting it. Everyone else, including clients, is refused by
-#: exact role match.
-require_circle = require_roles(FOUNDING_ROLE, "admin", "team_member")
+# `require_circle` is defined at the top of the module — see the note there on
+# why it cannot live beside the endpoints that use it.
 
 
 async def _author(user: dict) -> dict:
