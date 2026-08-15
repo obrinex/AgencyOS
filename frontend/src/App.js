@@ -10,6 +10,7 @@ import { PortalProvider } from "@/contexts/PortalContext";
 import PortalAssistant from "@/components/portal/PortalAssistant";
 
 import Login from "@/pages/Login";
+import Landing from "@/pages/Landing";
 import FoundingAccept from "@/pages/founding/FoundingAccept";
 import FoundingPortal from "@/pages/founding/FoundingPortal";
 import FoundingReview from "@/pages/founding/FoundingReview";
@@ -80,7 +81,10 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            <Route path="/" element={<Navigate to="/login" replace />} />
+            {/* The product has a public address of its own now. `/` used to bounce
+                straight to the password box, so a client following a link from an
+                invoice met a login form with nothing saying what it belonged to. */}
+            <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/proposal/:token" element={<PublicProposal />} />
             <Route path="/book/:slug" element={<BookMeeting />} />

@@ -14,7 +14,7 @@ import { useUnreadCounts } from "@/lib/useNotifications";
 import { NavRail, TabBar, MoreSheet } from "@/components/portal/PortalNav";
 import OnboardingGate from "@/components/portal/OnboardingGate";
 import PortalTour from "@/components/portal/PortalTour";
-import { PageTransition } from "@/components/motion";
+import { PageTransition, SwapUp } from "@/components/motion";
 
 /** The client portal's shell.
  *
@@ -200,18 +200,11 @@ export default function PortalLayout() {
             <Brand compact />
           </div>
           <div className="relative z-10 hidden min-w-0 md:block">
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={activeKey}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                className="truncate font-display text-lg font-bold tracking-tight"
-              >
+            <SwapUp swapKey={activeKey} distance={6} duration={0.3}>
+              <p className="truncate font-display text-lg font-bold tracking-tight">
                 {NAV.find((n) => n.key === activeKey)?.label}
-              </motion.p>
-            </AnimatePresence>
+              </p>
+            </SwapUp>
           </div>
           <div className="relative z-10 ml-auto flex shrink-0 items-center gap-2">
             <NotificationBell testId="portal-notifications" onNavigate={reload} />
@@ -263,7 +256,9 @@ export default function PortalLayout() {
       />
 
       {showGuide && <PortalTour steps={TOUR} title="Client Portal · Guide" />}
-      <ClientTwoFAPrompt />
+      {/* Held back while the guide is up. A Radix modal makes the rest of the
+          document inert, which left every button on the tour unclickable. */}
+      <ClientTwoFAPrompt suspended={showGuide} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import { motion, LayoutGroup } from "framer-motion";
 import { prefersReducedMotion } from "@/components/motion";
 
 /** The navigation both portals share.
@@ -319,14 +319,16 @@ export function TabBar({ items, activeKey, onSelect, groupId = "portal-tabs", te
 
 export function MoreSheet({ open, items, activeKey, onSelect, onClose, title = "Everything else",
                            hideFrom = "lg" }) {
+  // No AnimatePresence: an exit animation that never completes would leave the
+  // sheet permanently on screen. It slides in and simply unmounts.
+  if (!open) return null;
   return (
-    <AnimatePresence>
-      {open && (
+    <>
+      {(
         <div className={`fixed inset-0 z-50 ${hideFrom === "md" ? "md:hidden" : "lg:hidden"}`} data-testid="portal-more-sheet">
           <motion.button
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
             aria-label="Close menu"
             onClick={onClose}
             className="absolute inset-0 bg-black/75 backdrop-blur-sm"
@@ -334,8 +336,7 @@ export function MoreSheet({ open, items, activeKey, onSelect, onClose, title = "
           <motion.div
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ duration: 0.34, ease: EASE }}
+            transition={{ duration: 0.42, ease: EASE }}
             className="obx-glass pb-safe absolute inset-x-0 bottom-0 rounded-t-3xl p-4"
           >
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/15" />
@@ -364,6 +365,6 @@ export function MoreSheet({ open, items, activeKey, onSelect, onClose, title = "
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </>
   );
 }

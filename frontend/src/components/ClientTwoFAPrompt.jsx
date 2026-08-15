@@ -15,11 +15,26 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 const qrUrl = (data) =>
   `https://api.qrserver.com/v1/create-qr-code/?size=190x190&bgcolor=24-24-26&color=244-244-245&data=${encodeURIComponent(data)}`;
 
-// A gentle, one-per-session nudge for clients who haven't turned on 2FA. It
-// drives the existing /auth/2fa/{setup,enable} flow, and the moment 2FA is on it
-// removes itself: enabling flips `two_fa_enabled` in the auth context, the
-// show-condition goes false, and the component returns null.
-export default function ClientTwoFAPrompt() {
+/** A gentle, one-per-session nudge for clients who haven't turned on 2FA.
+ *
+ *  Drives the existing /auth/2fa/{setup,enable} flow, and the moment 2FA is on
+ *  it removes itself: enabling flips `two_fa_enabled` in the auth context, the
+ *  show-condition goes false, and the component returns null.
+ *
+ *  ## `suspended`, and why it has to exist
+ *
+ *  This is a Radix dialog, and a Radix modal sets `pointer-events: none` on
+ *  `<body>` so that only its own portal is clickable. That is correct for a
+ *  modal — but it made the first-run guide *dead* on the client portal: the
+ *  tour drew above it (z-90 against z-50) and looked completely normal, while
+ *  every click on Next, Back and the dots went nowhere. The members' portal was
+ *  fine only because it has no 2FA prompt.
+ *
+ *  Two first-run overlays wanting the same moment. The guide wins, because it
+ *  explains the thing the client just signed into; the 2FA nudge arrives the
+ *  moment the guide is dismissed, which is also a better time to be asked.
+ */
+export default function ClientTwoFAPrompt({ suspended = false }) {
   const { user, setUser } = useAuth();
   const [dismissed, setDismissed] = useState(false);
   const [setupData, setSetupData] = useState(null);
@@ -27,7 +42,7 @@ export default function ClientTwoFAPrompt() {
   const [enabling, setEnabling] = useState(false);
 
   const shouldShow =
-    !!user && user.role === "client" && !user.two_fa_enabled && !dismissed;
+    !suspended && !!user && user.role === "client" && !user.two_fa_enabled && !dismissed;
 
   useEffect(() => {
     // Fetch a fresh secret + URI once, when we've decided to show the prompt.

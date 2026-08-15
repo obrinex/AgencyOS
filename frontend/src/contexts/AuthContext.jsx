@@ -59,7 +59,10 @@ export function AuthProvider({ children }) {
     }
     sessionStorage.setItem("agencyos_user", JSON.stringify(data));
     setUser(data);
-    return { requires2FA: false };
+    // The account comes back with the result so the caller can route by role
+    // without waiting for a re-render. Existing callers only read
+    // `requires2FA`, so adding it breaks nothing.
+    return { requires2FA: false, user: data };
   };
 
   const verify2FA = async (code) => {
@@ -80,6 +83,7 @@ export function AuthProvider({ children }) {
     sessionStorage.setItem("agencyos_user", JSON.stringify(data));
     setUser(data);
     setPendingTwoFA(null);
+    return data;
   };
 
   const logout = async () => {

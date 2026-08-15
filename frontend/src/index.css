@@ -474,6 +474,41 @@ h1, h2, h3 {
     .pb-safe {
         padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
     }
+
+    /* ── The brandmark ─────────────────────────────────────────────────────
+       The signature "O", turning like a wheel. Lifted from obrinex.space's
+       hero so the product's front page and the marketing site open the same
+       way — eight seconds a revolution, linear, because an eased spin reads as
+       a thing being animated and a linear one reads as a thing that turns.
+
+       Reuses the `obx-spin` keyframes the holographic foil already defines
+       rather than declaring a second identical rotation. */
+    .obx-wheel {
+        display: inline-block;
+        animation: obx-spin 8s linear infinite;
+    }
+
+    /* The grid field behind the lockup, masked to fade out before it reaches
+       the copy. Same construction as the site's, in the CRM's ground. */
+    .obx-grid-field {
+        background-image:
+            linear-gradient(to right, rgba(255, 255, 255, 0.11) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.11) 1px, transparent 1px);
+        background-size: 6rem 5rem;
+        -webkit-mask-image: radial-gradient(ellipse 78% 48% at 50% 0%, black 62%, transparent 112%);
+        mask-image: radial-gradient(ellipse 78% 48% at 50% 0%, black 62%, transparent 112%);
+    }
+
+    /* The horizon arc the site closes its hero on: a very wide ellipse whose
+       lit edge sits just above the fold. */
+    .obx-horizon {
+        background: radial-gradient(
+            closest-side,
+            rgba(0, 0, 0, 0.98) 72%,
+            rgba(0, 224, 255, 0.22) 86%,
+            rgba(255, 255, 255, 0.06) 100%
+        );
+    }
 }
 
 @layer base {

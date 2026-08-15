@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -175,5 +176,55 @@ export function PageTransition({ routeKey, children }) {
     <div key={routeKey} className="obx-page-in">
       {children}
     </div>
+  );
+}
+
+/** Swap one panel for another, without AnimatePresence.
+ *
+ *  Changing `swapKey` remounts the child, which animates in; the outgoing one
+ *  simply unmounts. There is no exit animation, so nothing has to coordinate
+ *  and nothing can be left half-transitioned — the panel is either the old one
+ *  or the new one, never a stalled blend of both.
+ *
+ *  Chosen over `AnimatePresence mode="wait"` for robustness rather than
+ *  because that was broken: exits there are driven by requestAnimationFrame,
+ *  which does not fire in a page the browser never composites (a headless or
+ *  hidden tab). Under those conditions `mode="wait"` holds the outgoing child
+ *  forever and the incoming one never mounts, which makes a tour or a tab
+ *  switch look completely dead. This pattern degrades to an instant, correct
+ *  swap instead — worth the loss of an exit animation nobody watches.
+ *
+ *  `direction` (-1 | 1) slides the entrance from the correct side, so Back
+ *  still reads as going back.
+ */
+export function Swap({ swapKey, direction = 1, distance = 24, duration = 0.42, className, children }) {
+  const still = prefersReducedMotion();
+  return (
+    <motion.div
+      key={swapKey}
+      initial={still ? false : { opacity: 0, x: direction * distance }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: still ? 0 : duration, ease: [0.16, 1, 0.3, 1] }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/** The same idea on the vertical axis, for content that replaces itself in
+ *  place rather than sliding through a sequence. */
+export function SwapUp({ swapKey, distance = 12, duration = 0.4, className, children }) {
+  const still = prefersReducedMotion();
+  return (
+    <motion.div
+      key={swapKey}
+      initial={still ? false : { opacity: 0, y: distance }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: still ? 0 : duration, ease: [0.16, 1, 0.3, 1] }}
+      className={className}
+    >
+      {children}
+    </motion.div>
   );
 }

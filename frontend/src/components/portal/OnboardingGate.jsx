@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { Swap } from "@/components/motion";
 import { ArrowRight, ArrowLeft, Loader2, Check, Sparkles } from "lucide-react";
 import { usePortal } from "@/contexts/PortalContext";
 import { toast } from "sonner";
@@ -116,7 +117,7 @@ export default function OnboardingGate() {
       <div className="obx-aurora pointer-events-none fixed inset-0" />
 
       <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-xl flex-col px-5 py-8 sm:px-6">
-        <AnimatePresence mode="wait">
+        <div>
           {finishing ? (
             <motion.div
               key="done"
@@ -168,15 +169,8 @@ export default function OnboardingGate() {
                   </motion.p>
                 )}
 
-                <AnimatePresence mode="wait" custom={direction}>
-                  <motion.div
-                    key={question.key}
-                    custom={direction}
-                    initial={{ opacity: 0, x: direction * 26 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: direction * -26 }}
-                    transition={{ duration: 0.34, ease: EASE }}
-                  >
+                <Swap swapKey={question.key} direction={direction} distance={26} duration={0.44}>
+                  <div>
                     <h1 className="font-display text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
                       {question.prompt}
                     </h1>
@@ -236,8 +230,8 @@ export default function OnboardingGate() {
                         />
                       )}
                     </div>
-                  </motion.div>
-                </AnimatePresence>
+                  </div>
+                </Swap>
               </div>
 
               <footer className="flex shrink-0 items-center gap-3">
@@ -269,7 +263,7 @@ export default function OnboardingGate() {
               </p>
             </motion.div>
           )}
-        </AnimatePresence>
+        </div>
       </div>
     </div>
   );

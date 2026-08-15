@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { Swap } from "@/components/motion";
 import { ArrowRight, ArrowLeft, X } from "lucide-react";
 import { usePortal } from "@/contexts/PortalContext";
 
@@ -91,14 +92,8 @@ export default function PortalTour({ steps, title }) {
           </div>
 
           <div className="min-h-[13rem] sm:min-h-[11rem]">
-            <AnimatePresence mode="wait" custom={direction}>
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, x: direction * 24 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: direction * -24 }}
-                transition={{ duration: 0.32, ease: EASE }}
-              >
+            <Swap swapKey={index} direction={direction} duration={0.46}>
+              <div>
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/12 text-primary ring-1 ring-primary/30">
                   <step.icon className="h-5 w-5" />
                 </div>
@@ -106,8 +101,8 @@ export default function PortalTour({ steps, title }) {
                   {step.title}
                 </h2>
                 <p className="mt-2 max-w-prose text-sm leading-relaxed text-ash">{step.body}</p>
-              </motion.div>
-            </AnimatePresence>
+              </div>
+            </Swap>
           </div>
 
           <div className="mt-6 flex items-center gap-3">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { SwapUp } from "@/components/motion";
 import {
   MessageSquare, Sparkles, LogOut, FolderKanban, Users, UserPlus,
   BookOpen, HelpCircle, IdCard, MoreHorizontal, ShieldCheck, Compass,
@@ -192,22 +193,15 @@ export default function FoundingPortal() {
       {/* The rail now starts at `md` in its collapsed form rather than vanishing
           below `lg`. A tablet had been getting the phone's tab bar with five of
           nine sections behind More, on a screen with room for all nine. */}
-      {/* The width changes instantly, on purpose — twice burned trying to
-          animate it.
-
-          As a framer `animate` value it wrote `width: 248px` on mount and never
-          updated again. As a CSS `transition-[width]` it froze at the start
-          value: inline style read `width: 68px` while `offsetWidth` stayed 248
-          indefinitely, and setting `transition-property: none` snapped it to 68
-          at once. Verified in the browser both times.
-
-          So the rail resizes in one frame and the *contents* carry the motion —
-          the label block fades and slides out under AnimatePresence, which is
-          what the eye actually follows. A snap that always works beats a
-          smooth animation that never runs. */}
+      {/* Width is a CSS transition. It measured as "frozen at 248px" while I
+          was testing, which sent me chasing a framer-motion bug that did not
+          exist — the automated browser pane never composites, so it reports
+          document.hidden and requestAnimationFrame never fires there. No
+          frames, no animation, on any engine. Verified: 0 rAF callbacks per
+          second in that pane. In a real browser this simply animates. */}
       <aside
         style={{ width: railCollapsed ? 68 : 248 }}
-        className="sticky top-0 hidden h-[100dvh] shrink-0 flex-col border-r border-white/[0.07] md:flex"
+        className="sticky top-0 hidden h-[100dvh] shrink-0 flex-col border-r border-white/[0.07] transition-[width] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] md:flex"
       >
         <div
           className={`obx-aurora relative flex h-16 items-center border-b border-white/[0.07] ${
@@ -289,19 +283,12 @@ export default function FoundingPortal() {
         <header className="obx-aurora sticky top-0 z-40 border-b border-white/[0.07] bg-black/60 backdrop-blur-xl">
           <div className="relative z-10 mx-auto flex max-w-5xl items-center gap-3 px-4 py-3 sm:px-6">
             <div className="min-w-0">
-              <AnimatePresence mode="wait">
-                <motion.h1
-                  key={tab}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                  className="truncate font-display text-base font-bold tracking-tight sm:text-lg"
-                >
+              <SwapUp swapKey={tab} distance={6} duration={0.3}>
+                <h1 className="truncate font-display text-base font-bold tracking-tight sm:text-lg">
                   <span className="md:hidden">Founding Circle</span>
                   <span className="hidden md:inline">{active?.label}</span>
-                </motion.h1>
-              </AnimatePresence>
+                </h1>
+              </SwapUp>
               <p className="truncate font-mono text-[9px] uppercase tracking-[0.2em] text-graphite md:hidden">
                 {me ? `${me.members} member${me.members === 1 ? "" : "s"}` : " "}
               </p>
@@ -326,14 +313,8 @@ export default function FoundingPortal() {
         </header>
 
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-24 pt-5 sm:px-6 sm:pt-6 md:pb-10">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={tab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            >
+          <SwapUp swapKey={tab} distance={14} duration={0.44}>
+            <div>
               {tab === "membership" && <MembershipPassport />}
               {tab === "chat" && <CommunityRoom onRead={onRoomRead} />}
               {tab === "assistant" && <PortalAssistant audience="member" />}
@@ -343,8 +324,8 @@ export default function FoundingPortal() {
               {tab === "profile" && <MemberProfile />}
               {tab === "guidelines" && <Guidelines />}
               {tab === "help" && <Help onReplayTour={replayGuide} />}
-            </motion.div>
-          </AnimatePresence>
+            </div>
+          </SwapUp>
         </main>
       </div>
 
